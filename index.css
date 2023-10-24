@@ -1,1 +1,47 @@
+::-webkit-scrollbar {
+	width: 10px;
+}
+::-webkit-scrollbar-track {
+	background:white;
+}
+::-webkit-scrollbar-thumb {
+	background:gray;
+}
 
+::root{
+	--indentation-space:1vw;
+}
+body{
+	font-family:monospace;
+	color:black;
+	background-color:white;
+	overflow:hidden visible;
+}
+#banner{
+	font-size:40px;
+}
+h1:not(#banner){
+	margin-left:1vw;
+}
+h2{
+	margin-left:2vw;
+}
+h3{
+	margin-left:3vw;
+}
+h4{
+	margin-left:4vw;
+}
+p{
+	margin-left:5vw;
+}
+h1+p{
+	margin-left:2vw;
+}
+h2+p{
+	margin-left:3vw;
+}
+h2 ol li+p{
+	font-size:12px;
+	margin-left:2vw;
+}
