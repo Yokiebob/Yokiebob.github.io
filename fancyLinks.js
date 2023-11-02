@@ -5,6 +5,7 @@ for(var i = 0; i < elements_with_flag.length; i++){
 	var currText = curr.innerHTML;
 	currText.split("/");
 	currText.splice(0,1);
+	alert('test');
 	for(var k = 0; k < currText.length; k++){
 		const gotoLink = currText.slice(0,k + 1).join("/");
 		currText[k] = `<a href = ${"https://yokiebob.github.io/" + gotoLink}></a>`;
