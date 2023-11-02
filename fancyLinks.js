@@ -1,8 +1,7 @@
-alert('test');
 const elements_with_flag = document.getElementsByClassName('niceLinkFormat');
 for(var i = 0; i < elements_with_flag.length; i++){
 	const curr = elements_with_flag[i];
-	
+	alert('test');
 	var currText = curr.innerHTML;
 	currText.split("/");
 	currText.splice(0,1);
