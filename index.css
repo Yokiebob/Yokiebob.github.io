@@ -45,3 +45,12 @@ h2 ol li+p{
 	font-size:12px;
 	margin-left:2vw;
 }
+a:link{
+	color:lime;
+}
+a:visited{
+	color:green;
+}
+svg{
+	border:2px solid red;
+}
