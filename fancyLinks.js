@@ -8,6 +8,6 @@ for(var i = 0; i < elements_with_flag.length; i++){
 	
 	for(var k = 0; k < currText.length; k++){
 		const gotoLink = currText.slice(0,k + 1).join("/").replace("Yokiebob/","");
-		curr.innerHTML += `<a href = "${"https://yokiebob.github.io/" + (currText[k] == "Yokiebob" ? "" : gotoLink)}"> ${currText[k]+"/"} </a>`;
+		curr.innerHTML += `<a href = "${"https://yokiebob.github.io/" + (currText[k] == "Yokiebob" ? "" : gotoLink)}">${currText[k]}</a>/`;
 	}
 }
