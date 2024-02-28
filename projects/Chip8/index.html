@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="description" content="Yokiebob's projects">
+		<meta name="keywords" content="Yokiebob, projects, programming">
+		
+		<link rel = "stylesheet" href = "/index.css">
+        <link rel = "stylesheet" href = "./main.css">
+		<link rel = "icon" type = "image/x-icon" href = "/favicon.ico">
+		<title>Chip8 interpreter</title>
+	</head>
+	<body>
+		<h1 class = "niceLinkFormat">Yokiebob/projects/Chip8</h1>
+        <h2>Introduction</h2>
+        <p>The Chip8 virtual machine was a way for programmers to more easily make games on their computers. You can't really call the Chip8 interpreter an emulator because we are not emulating a system that is hardware based, it always was just a system running on another system.</p>
+        <h2>How does it work?</h2>
+        <p>There are several great tutorials online on how to make one, google it. The way it works is by getting an array of numerical instructions. It takes the instructions and looks at a chunk of the instruction, called the opcode (operation code). This tells it which instruction to execute. After it has decided which one to execute it reads the rest of the number, depending on the opcode recieved. So given a certain array of numbers you can run just about anything within the Chip8's memory requirements.</p>
+        <h2>Where can I see the github link?</h2>
+        <p>The github page is located here: <a href = "https://github.com/Yokiebob/chip8">Link</a></p>
+        <canvas id = "chip8-canvas" width = "640" height = "320"></canvas>
+        <p><i>wasd to move. This buffer was downloaded from <a href = "https://johnearnest.github.io/chip8Archive/play.html?p=flightrunner">Chip8 Archive</a></i></p>
+		<script src = "https://cdn.jsdelivr.net/gh/Yokiebob/chip8@main/v1.js"></script>
+        <script src = "./main.js"></script>
+		<script src = "/fancyLinks.js"></script>
+	</body>
+</html>
