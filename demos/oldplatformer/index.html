@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<!--Continuing this in a different editor because of the array map size.
+https://stackoverflow.com/questions/3768565/drawing-an-svg-file-on-a-html5-canvas remember this link
+Thanks for the support! I will definitely continue this on the side
+(BTW the console in the corner is my replacement for console.log, because the school blocked inspect.
+-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>nothing much</title>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Audiowide"><!--love dat font!-->
+        <style>
+            body{
+                overflow:hidden;
+                margin:0;
+                font-family:'Audiowide';
+            }
+            #bar{
+                overflow:hidden;
+                opacity:50%;
+                color:red;
+                background-color:black;
+                position:absolute;
+                left:0px;
+                top:0px;
+                width:100px;
+                transition-duration:0.5s;
+            }
+            #bar:hover{
+                opacity:100%;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id = 'c' width = '600' height = '600'></canvas>
+        <div id = 'bar'>
+            <p id = 'inputer'>Console:</p>
+        </div>
+        <script type = 'module'>
+            var con = document.getElementById('inputer');
+            function log(w){
+                con.innerHTML+="<br>"+w;
+            }
+            log.clear = function(){
+                con.innerHTML="Console:";
+            };
+            var canvas = document.getElementById('c');
+            var ctx = canvas.getContext('2d');
+            
+            var voke = {};
+            document.addEventListener('keydown',(e)=>{
+                voke[e.key.toString()] = true;
+                voke[e.keyCode] = true;
+                e.preventDefault();
+            });
+            document.addEventListener('keyup',(e)=>{
+                voke[e.key.toString()] = false;
+                voke[e.keyCode] = false;
+                e.preventDefault();
+            });
+            
+            var random = (min,max)=>Math.random()*(max-min)+min;
+            var hit = (a,b)=>a.x+a.w>b.x&&a.x<b.x+b.w&&a.y+a.h>b.y&&a.y<b.y+b.h;
+            var lerp = (a,b,c)=>a+(b-a)*c;
+            var constrain = (a,b,c)=>{
+                if(a<b){
+                    a = b;
+                }
+                if(a>c){
+                    a = c;
+                }
+            };
+            var distsq =(a,b,c,d)=>(a-c)*(a-c)+(b-d)*(b-d);
+            var frameCount = 0;
+            
+            var transition = {
+                fill:0,
+                next:false,
+                back:false,
+                dones:function(){
+                    ctx.fillStyle = 'rgb(0,0,0,'+this.fill+')';
+                    ctx.fillRect(0,0,canvas.height,canvas.width);
+                    ctx.fillStyle = 'black';
+                    if(this.fill<0.95&&this.next){
+                        this.fill = lerp(this.fill,1,0.02);
+                    }
+                    if(this.fill>0.95){
+                        this.next = false;
+                        portal.fire = [];
+                        backPortal.fire = [];
+                        if(!this.back){
+                            level++;
+                        }else{
+                            level--;
+                        }
+                        drawLevel();
+                    }
+                    if(!this.next){
+                        this.fill = lerp(this.fill,0,0.02);
+                    }
+                }
+            };
+            
+            for (var i = requestAnimationFrame(Math.cos);i > 0; cancelAnimationFrame(i--)) {}//hs student made this, so you don't get faster everytime you press reload
+            var deathParticles = [];
+            var deathParticle = class{
+                constructor(x,y,vx,vy){
+                    this.x = x;
+                    this.y = y;
+                    this.bx = x;
+                    this.by = y;
+                    this.vx = vx;
+                    this.vy = vy;
+                    this.live = Math.random()*100;
+                }
+                run(){
+                    this.live--;
+                    ctx.save();
+                    ctx.translate(this.x,this.y);
+                    ctx.rotate(this.bx+this.by+frameCount/10);
+                    ctx.fillStyle = 'rgb(0,0,0,'+this.live*0.01+')';
+                    ctx.fillRect(-2,-2,5,5);
+                    ctx.restore();
+                    this.x+=(this.vx+=0.1);
+                    this.y+=this.vy;
+                }
+            };
+            
+            var player = {
+                x:0,
+                y:0,
+                backX:0,
+                backY:0,
+                w:20,
+                h:20,
+                vx:0,
+                vy:0,
+                px:0,
+                py:0,
+                canJump:false,
+                wJump:false,
+                timer:0,
+                dead:0,
+                pdead:false,
+                sideJump:0,
+                wait:80,
+                touching:false,
+                powerUps:{
+                    wallJump:true,
+                },
+                move:function(){
+                    log(this.touching);
+                    if(this.dead<=0){
+                        if(voke.w||voke[38]){
+                            if(this.canJump){
+                                this.wJump = true;
+                                this.timer = 5;
+                                this.canJump = false;
+                            }
+                            if(this.timer>0&&this.wJump){
+                                this.timer-=0.5;
+                                if(!this.touching&&this.powerUps.wallJump){
+                                    this.vx-=this.timer*0.3*this.sideJump;
+                                }
+                                this.vy-=this.timer*0.3;
+                            }
+                        }else{
+                            this.wJump = false;
+                        }
+                        if(voke.a||voke[37]){
+                            this.vx-=0.2;
+                        }
+                        if(voke.d||voke[39]){
+                            this.vx+=0.2;
+                        }
+                        this.px = this.x;
+                        this.py = this.y;
+                        this.vy+=0.2;
+                        this.x+=this.vx;
+                        this.y+=this.vy;
+                        this.vy*=0.98;
+                        this.vx*=0.95;
+                        this.canJump = false;
+                    }
+                    if(this.dead>=0){
+                        this.dead--;
+                    }
+                    if(this.dead<=0&&this.pdead){
+                        this.pdead = false;
+                        this.x = this.backX;
+                        this.y = this.backY;
+                    }
+                    this.touching = false;
+                    this.sideJump = 0;
+                },
+                hit:function(w){
+                    if(hit(this,w)){
+                        if(this.py+this.h<=w.y){
+                            this.y = w.y-this.h;
+                            this.vy = 0;
+                            this.canJump = true;
+                            this.touching =true;
+                        }else if(this.px>=w.x+w.w){
+                            this.x = w.x+w.w;
+                            this.vx = 0;
+                            if(this.powerUps.wallJump){
+                                this.canJump = true;
+                            }
+                            this.sideJump = -4;
+                            if(this.vy>0){
+                                this.vy*=0.94;
+                            }
+                        }else if(this.px+this.w<=w.x){
+                            this.x = w.x-this.w;
+                            this.vx = 0;
+                            if(this.powerUps.wallJump){
+                                this.canJump = true;
+                            }
+                            this.sideJump = 4;
+                            if(this.vy>0){
+                                this.vy*=0.94;
+                            }
+                        }else{
+                            this.y = this.py;
+                            this.vy = Math.abs(this.vy)*0.7;
+                        }
+                    }
+                },
+                die:function(){
+                    if(!player.pdead){
+                        player.dead = player.wait;
+                        player.pdead = true;
+                    }
+                    if(this.dead>this.wait-1){
+                        for(var i = 0; i < 20; i+=2){
+                            for(var k = 0; k < 20; k+=2){
+                                deathParticles.push(new deathParticle(this.x+i,this.y+k,(i+random(-40,40)-10)/20+this.vx,random(-4,-1)));
+                            }
+                        }
+                    }
+                    this.vx = 0;
+                    this.vy = 0;
+                }
+            };
+            var cam = {
+                x:300,
+                y:300
+            };
+            
+            var snow = class{
+                constructor(){
+                    this.x = random(0,canvas.width);
+                    this.y = random(0,canvas.height);
+                    this.o = random(5,10);
+                    this.size = ~~random(10,20);
+                }
+                run(){
+                    ctx.save();
+                    ctx.translate(this.x,this.y);
+                    ctx.rotate(this.x*0.02);
+                    ctx.fillRect(-this.size/2,-this.size/2,this.size,this.size);
+                    ctx.restore();
+                    this.x+=this.o;
+                    this.x-=player.vx*0.81;
+                    this.y-=player.vy*0.81;
+                    if(this.y<0){
+                        this.y = canvas.height;
+                    }
+                    if(this.y>canvas.height){
+                        this.y = 0;
+                    }
+                    if(this.x>canvas.width+20){
+                        this.x = -20;
+                        this.o = random(5,10);
+                        this.y = random(0,canvas.height);
+                    }
+                }
+            };
+            var snows = [];
+            for(var i = 0; i < 20; i++){
+                snows.push(new snow());
+            }
+            
+            var block = class{
+                constructor(x,y,w,h,type){
+                    this.x = x;
+                    this.y = y;
+                    this.w = w;
+                    this.h = h;
+                    this.type = type;
+                }
+            };
+            
+            var flame = class{
+                constructor(x,y,vx,vy){
+                    this.x = x;
+                    this.y = y;
+                    this.vx = vx;
+                    this.vy = vy;
+                    this.live = 100;
+                }
+                run(){
+                    ctx.fillStyle = 'rgb(0, 0, 0,'+this.live*0.003+')';
+                    ctx.save();
+                    ctx.translate(this.x,this.y);
+                    ctx.rotate(this.y/10);
+                    ctx.fillRect(-5,-5,10,10);
+                    ctx.restore();
+                    this.x+=this.vx;
+                    this.y+=this.vy;
+                    this.vx+=0.005;
+                    this.live--;
+                    ctx.fillStyle = 'black';
+                }
+            };
+            
+            var altar = class{
+                constructor(x,y){
+                    this.x = x;
+                    this.y = y;
+                    this.fire = [];
+                }
+                run(){
+                    this.fire.push(new flame(this.x+20+random(-10,10),this.y-30,0,random(0,-1)));
+                    for(var i = 0; i < this.fire.length; i++){
+                        this.fire[i].run();
+                    }
+                    for(var i = 0; i < this.fire.length; i++){
+                        if(this.fire[i].live<0){
+                            this.fire.splice(i,1);
+                        }
+                    }
+                    ctx.fillRect(this.x,this.y+20,40,20);
+                    ctx.fillRect(this.x+4,this.y-20,32,40);
+                    ctx.fillRect(this.x,this.y-40,40,20);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(this.x+9,this.y-8,2,20);
+                    ctx.fillRect(this.x+19,this.y-10,2,24);
+                    ctx.fillRect(this.x+29,this.y-10,2,24);
+                    ctx.fillStyle = 'black';
+                }
+            };
+            var altars = [];
+            
+            {
+                var areatri = function(tri){
+                    return Math.abs(tri[0][0]*(tri[1][1]-tri[2][1])+tri[1][0]*(tri[2][1]-tri[0][1])+tri[2][0]*(tri[0][1]-tri[1][1]))/2;
+                },
+                ptriangle = function(px,py,tri){
+                    var a = areatri(tri);
+                    var pab = areatri([[px,py],tri[0],tri[1]]);
+                    var pbc = areatri([[px,py],tri[1],tri[2]]);
+                    var pac = areatri([[px,py],tri[0],tri[2]]);
+                    return pab+pbc+pac===a;
+                },
+                prect = function(px,py,x,y,w,h){
+                    if(px>x&&px<x+w&&py>y&&py<y+h){
+                        return true;
+                    }
+                },
+                recttriangle = function(x,y,w,h,tri){
+                    if(prect(tri[0][0],tri[0][1],x,y,w,h)){
+                        return true;
+                    }
+                    if(prect(tri[1][0],tri[1][1],x,y,w,h)){
+                        return true;
+                    }
+                    if(prect(tri[2][0],tri[2][1],x,y,w,h)){
+                        return true;
+                    }
+                    if(ptriangle(x,y,tri)){
+                        return true;
+                    }
+                    if(ptriangle(x+w,y,tri)){
+                        return true;
+                    }
+                    if(ptriangle(x,y+h,tri)){
+                        return true;
+                    }
+                    if(ptriangle(x+w,y+h,tri)){
+                        return true;
+                    }
+                    return false;
+                };
+            }
+            
+            var map = [
+                [
+                    [new block(-300,40,300,600,'normal'),new block(-300,640,1340,600,'normal'),new block(-300,-540,1020,600,'normal'),new block(1020,720,4000,300,'normal'),new block(1280,-1640,40,2300,'normal')],
+                    "111111111111111111`````````````````````````````````````````````",
+                    "1111``````````1111`````````````````````````````````````````````",
+                    "111`````````````11`````````````````````````````````````````````",
+                    "11```````````````1`````````````````````````````````````````````",
+                    "1````````````````1`````````````````````````````````````````````",
+                    "1``````11`````1````````````````````````````````````````````````",
+                    "1``11````````````1`````````````````````````````````````````````",
+                    "11```````````````1``1``````````````````````````````````````````",
+                    "1`111``1```1`````11````````````````````````````````````````````",
+                    "1````11`````11````11```````````````````````````````````````````",
+                    "1```````````````11111``````````````````````````````````````````",
+                    "1````````#````1``11111`````````````````111`````````````````````",
+                    "11``````111`````1111111``````````````111v11````````````````````",
+                    "111```^11111^``111111111`````````````1`11111```````````````````",
+                    "1111111111111111111111111````````````v``1111```````````````````",
+                    "````````````````````````````````````````1111```````````````````",
+                    "``````````````````````````1``^````@`````111````````````````````",
+                ],
+            ];
+            var level = 0;
+            var blocks = [];
+            function drawLevel(){
+                blocks = [];
+                altars = [];
+                for(var i = 0; i < map[level][0].length; i++){
+                    blocks.push(map[level][0][i]);
+                }
+                for(var i = 1; i < map[level].length; i++){
+                    for(var k = 0; k < map[level][i].length; k++){
+                        switch(map[level][i][k]){
+                            case '1':{
+                                blocks.push(new block(k*40,i*40,40,40,'normal'));
+                            }break;
+                            case '^':{
+                                blocks.push(new block(k*40,i*40,40,40,'spikeup'));
+                            }break;
+                            case 'v':{
+                                blocks.push(new block(k*40,i*40,40,40,'spikedown'));
+                            }break;
+                            case '@':{
+                                player.x = k*40;
+                                player.y = i*40+19;
+                                player.backX = k*40;
+                                player.backY = i*40;
+                                cam.x = -player.x+player.w/2+canvas.width/2;
+                                cam.y = -player.y+player.h/2+canvas.height/2;
+                            }break;
+                            case '#':{
+                                altars.push(new altar(k*40,i*40));
+                            }break;
+                        }
+                    }
+                }
+            }
+            drawLevel();
+            
+            function draw(){
+                frameCount++;
+                cam.x = Math.round(lerp(cam.x,-player.x+player.w/2+canvas.width/2,0.1));
+                cam.y = Math.round(lerp(cam.y,-player.y+player.h/2+canvas.height/2,0.1));
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0,0,canvas.width,canvas.height);
+                ctx.fillStyle = 'black';
+
+                player.move();
+
+                for(var i = 0; i < snows.length; i++){
+                    snows[i].run();
+                }
+                ctx.save();
+                ctx.translate(cam.x,cam.y);
+                for(var i = 0; i < blocks.length; i++){
+                    var blk = blocks[i];
+                    switch(blk.type){
+                        case 'normal':{
+                            ctx.fillRect(blk.x,blk.y,blk.w,blk.h);
+                            player.hit(blk);
+                        }break;
+                        case 'spikeup':{
+                            ctx.beginPath();
+                            ctx.lineTo(blk.x+20,blk.y);
+                            ctx.lineTo(blk.x,blk.y+40);
+                            ctx.lineTo(blk.x+40,blk.y+40);
+                            ctx.fill();
+                            if(recttriangle(player.x,player.y,player.w,player.h,[[blk.x+20,blk.y],[blk.x,blk.y+40],[blk.x+40,blk.y+40]])){
+                                player.die();
+                            }
+                        }break;
+                        case 'spikedown':{
+                            ctx.beginPath();
+                            ctx.lineTo(blk.x+20,blk.y+40);
+                            ctx.lineTo(blk.x,blk.y);
+                            ctx.lineTo(blk.x+40,blk.y);
+                            ctx.fill();
+                            if(recttriangle(player.x,player.y,player.w,player.h,[[blk.x+20,blk.y+40],[blk.x,blk.y],[blk.x+40,blk.y]])){
+                                player.die();
+                            }
+                        }break;
+                    }
+                    
+                }
+                for(var i = 0; i < altars.length; i++){
+                    if(distsq(player.x,player.y,altars[i].x,altars[i].y)<500000){
+                        altars[i].run();
+                    }
+                }
+
+                ctx.fillStyle = 'black';
+                for(var i = 0; i < deathParticles.length; i++){
+                    deathParticles[i].run();
+                }
+                for(var i = 0; i < deathParticles.length; i++){
+                    if(deathParticles[i].live<0){
+                        deathParticles.splice(i,1);
+                    }
+                }
+
+                if(player.dead<=0){
+                    ctx.fillStyle = 'rgb(0, 0, 0)';
+                    ctx.beginPath();
+                    ctx.lineTo(player.x,player.y);
+                    ctx.lineTo(player.x+player.w,player.y);
+                    ctx.lineTo(player.x+player.w-player.vx,player.y+player.h-player.vy);
+                    ctx.lineTo(player.x-player.vx,player.y+player.h-player.vy);
+                    ctx.fill();
+                }
+                ctx.restore();
+                transition.dones();
+                log.clear();
+                log(player.x);
+                log(player.y);
+                requestAnimationFrame(draw);
+            }
+            draw();
+        </script>
+        <!--<script>-->
+    </body>
+</html>

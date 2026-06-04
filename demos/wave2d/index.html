@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>*{margin:0;}
+    #c{image-rendering:pixelated;border:1px solid black;}
+    </style>
+</head>
+<body>
+    <canvas id="c" width="400" height="400"></canvas>
+    <script>
+    try{
+        const canvas = c;
+        const ctx = canvas.getContext("2d");
+        const clamp = (a,b,c)=>a<b?b:a>c?c:a;
+        
+        const size = 400;
+        canvas.width=canvas.height=size;
+        
+        const f = new Float32Array(size*size);
+        const v = new Float32Array(size*size);
+        for(var i = 0; i < f.length; i++){
+            f[i]=Math.random()*6-3;
+        }
+        
+        function sample(x,y,arr,size){
+            if(x<0||x>=size||y<0||y>=size)return 0;
+            return arr[x+y*size];
+        }
+        cancelAnimationFrame(window.parent.raf);
+        function loop(){
+            const imgd = ctx.getImageData(0,0,size,size);
+            const d = imgd.data;
+            for(var i = 0; i < size; i++){
+                for(var k = 0; k < size; k++){
+                    const find = i+k*size;
+                    const index = find*4;
+                    d[index]=(f[find])*255;
+                    d[index+1]=-(f[find])*255;
+                    d[index+3]=255;
+                    
+                    var forc = 0;
+                    var normy=sample(i,k,f,size);
+                    for(var m = -1; m <= 1; m++){
+                        for(var n = -1; n <= 1; n++){
+                            if(n==0&&m==0)continue;
+                            forc+=-normy+sample(i+m,k+n,f,size);
+                        }
+                    }
+                    v[find]+=forc*0.01;
+                    v[find]*=0.99;
+                }
+            }
+            for(var i = 0; i < size; i++){
+                for(var k = 0; k < size; k++){
+                    const find = i+k*size;
+                    f[find]+=v[find];
+                }
+            }
+            ctx.putImageData(imgd,0,0);
+            window.parent.raf = requestAnimationFrame(loop);
+        }
+        canvas.onclick = ()=>{
+            window.parent.raf?(()=>{cancelAnimationFrame(window.parent.raf);window.parent.raf=0})():loop();
+        };
+        canvas.onmousemove = (e)=>{
+            var x = e.x/canvas.width*size|0;
+            var y = e.y/canvas.height*size|0;
+            for(var i = -3; i <= 3; i++){
+                for(var k = -3; k <=3; k++){
+                    f[x+i+(k+y)*size]=10;
+                }
+            }
+        };
+        loop();
+        }catch(err){alert(err);}
+    </script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            body{
+                background-color:black;
+                margin:0;
+                overflow:hidden;
+            }
+            #editor{
+                position:fixed;
+
+                background-color:black;
+                font-family:monospace;
+                color:lime;
+                width:90vw;
+                outline:none;
+                border-left:5px solid gray;
+                height:100vh;
+                overflow:auto;
+                word-break:break-all;
+                /*text-wrap:wrap;*/
+            }
+            #management{
+                height:100vh;
+                float:left;
+                width:10vw;
+                color:red;
+            }
+        </style>
+    </head>
+    <body>
+        <div id = "management">
+            <button onclick = "chooseFile()">Choose file</button>
+            <pre id="fileName"></pre>
+            <pre id="fileData"></pre>
+        </div>
+        <textarea id = "editor" spellcheck = "false"></textarea>
+        <script>
+            const editor = document.getElementById("editor");
+            const fileData = document.getElementById("fileData");
+            let writeStream,fileHandle;
+            async function chooseFile(){
+                [fileHandle] = await window.showOpenFilePicker();
+                //const write = await fileHandle.createWriteable();
+                const file = await fileHandle.getFile();
+                const reader = new FileReader();
+                reader.onload = function(e){
+                    editor.value = reader.result;
+                    fileData.innerHTML=editor.value.length;
+                };
+                reader.readAsText(file);
+                writeStream = await fileHandle.createWritable();
+            }
+            editor.onkeydown = async function(e){
+                if(e.key == "s" && e.ctrlKey){
+                    e.preventDefault();
+                    if(writeStream){
+                        await writeStream.write(editor.value);
+                        await writeStream.close();
+                        writeStream = await fileHandle.createWritable();
+                    }
+                }else if(e.key == "Tab"){
+                    e.preventDefault();
+                    if(editor.selectionStart === editor.selectionEnd){
+                        const start = editor.selectionStart;
+                        editor.value = editor.value.slice(0,start)+"    "+editor.value.slice(start,editor.value.length);
+                        editor.selectionStart = editor.selectionEnd = start + 4;
+                    }else{
+                        if(e.shiftKey){
+                            const ogstart = editor.selectionStart;
+                            var start = ogstart;
+                            while(start>0 && editor.value[start]!="\n"){
+                                start--;
+                            }
+                            const end = editor.selectionEnd;
+                            const range = end - start;
+                            var selected = editor.value.slice(start, end).split("\n");
+                            try{
+                            const numlines = selected.length;
+                            for(var i = 0; i < numlines; i++){
+                                for(var k =0; k < 4; k++){
+                                    if(selected[i][0]==" "){
+                                        selected[i]=selected[i].slice(1,selected[i].length);
+                                    }else{
+                                        k=100;
+                                    }
+                                }
+                            }
+                            }catch(err){alert(err);}
+                            selected=selected.join("\n");
+                            
+                            editor.value = editor.value.slice(0,start) + selected + editor.value.slice(end,editor.value.length);
+                            editor.selectionStart = start;
+                            editor.selectionEnd = start+selected.length;
+                        }else{
+                            const ogstart = editor.selectionStart;
+                            var start = ogstart;
+                            while(start>0 && editor.value[start]!="\n"){
+                                start--;
+                            }
+                            const end = editor.selectionEnd;
+                            const range = end - start;
+                            var selected = editor.value.slice(start, end).split("\n");
+                            const numlines = selected.length;
+                            selected = selected.join("\n    ");
+                            editor.value = editor.value.slice(0,start) + selected + editor.value.slice(end,editor.value.length);
+                            if(start == 0){
+                                editor.value = "    " + editor.value;
+                            }
+                            editor.selectionStart = start;
+                            editor.selectionEnd = end + numlines * 4-4;
+                        }
+                    }
+                }else if(e.key == "Enter"){
+                    if(editor.selectionStart == editor.selectionEnd){
+                        e.preventDefault();
+                        const ostart = editor.selectionStart;
+                        var start = ostart;
+                        var startOfWhitespace = ostart;
+                        while(start>0&&editor.value[start-1]!="\n"){
+                            start--;
+                            if(editor.value[start]!=" "){
+                                startOfWhitespace = start;
+                            }
+                        }
+                        const indent = startOfWhitespace-start;
+                        editor.value = editor.value.slice(0,ostart) + "\n" + " ".repeat(indent) + editor.value.slice(ostart,editor.value.length);
+                        editor.selectionStart = ostart+indent+1;
+                        editor.selectionEnd = ostart+indent+1;
+                    }
+                }else if (e.key == "Home"){
+                    editor.selectionDirection = "backward";
+                    if(editor.selectionStart == editor.selectionEnd){
+                        e.preventDefault();
+                        const START = editor.selectionStart;
+                        var start = editor.selectionStart;
+                        
+                        var inIndentation = true;
+                        var inStart = start;
+                        while(inStart>0 && editor.value[inStart-1]!="\n"){
+                            inStart--;
+                            if(editor.value[inStart] != " " && editor.value[inStart] != undefined){
+                                if(editor.value[inStart-1]!="\n"){
+                                    inIndentation = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if(start==inStart){inIndentation = false;}
+                        if(inIndentation){
+                            while(start>0&&editor.value[start-1]!="\n"){
+                                start--;
+                            }
+                            editor.selectionStart = start;
+                            if(e.shiftKey){
+                                editor.selectionEnd = START;
+                            }else{
+                                editor.selectionEnd = start;
+                            }
+                        }else if(start==inStart){
+                            while(start<editor.value.length-1 && editor.value[start]==" "){
+                                start++;
+                            }
+                            editor.selectionStart = editor.selectionEnd = start;
+                        }else{
+                            var iStart = start;
+                            while(start>0 && editor.value[start-1]!="\n"){
+                                start--;
+                                if(editor.value[start]!=" "){
+                                    iStart = start;
+                                }
+                            }
+                            editor.selectionStart = iStart;
+                            if(e.shiftKey){
+                                editor.selectionEnd=START;
+                            }else{
+                                editor.selectionEnd=iStart;
+                            }
+                        }
+                    }else{
+                        e.preventDefault();
+                        var start = editor.selectionStart;
+                        const START=editor.selectionEnd;
+                        while(start>0 && editor.value[start-1]!="\n"){
+                            start--;
+                        }
+                        editor.selectionStart=start;
+                        editor.selectionEnd=START;
+                    }
+                }
+                fileData.innerHTML=editor.value.length;
+            };
+            editor.oninput = function(){
+                fileData.innerHTML=editor.value.length;
+            };
+        </script>
+    </body>
+</html>

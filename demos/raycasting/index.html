@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            *{
+                margin:0;
+            }
+            canvas{
+                border:2px solid black;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas width = "400" height = "400" id = "c">Get canvas support for this to work.</canvas>
+        <img id = "texture" src = "wolftextures.png"/>
+        <script type = "module">
+        try{
+            var canvas = document.getElementById('c');
+            var ctx = canvas.getContext('2d');
+            var texture = document.getElementById('texture');
+            var textures = [];
+            ctx.imageSmoothingEnabled = false;
+            texture.onload = function(){
+                for(var i = 0; i < texture.width; i++){
+                    var c = document.createElement('canvas');
+                    var cx = c.getContext('2d');
+                    c.width = 1;c.height = texture.height;
+                    cx.drawImage(texture,-i,0);
+                    textures.push(c);
+                }
+            };
+            /*
+            Original project: https://www.khanacademy.org/computer-programming/spin-off-of-parallax/5487923235176448
+            I had decided that I needed to make a real render system.
+
+
+
+
+            Start 2d top down
+            Then make 3d because easy HAHAHAHA
+            */
+            var isMouseClicked = false;
+            var keys = {};
+            window.addEventListener('keydown',function(e){
+                keys[e.key.toString()]=true;
+            });
+            window.addEventListener('keyup',function(e){
+                keys[e.key.toString()]=!true;
+            });
+
+            var mouseX=0,mouseY=0,pmouseX=0,pmouseY=0;
+            canvas.addEventListener("mousemove",function(e){
+                mouseX += e.movementX;
+                mouseY += e.movementY;
+            });
+
+            function distsq(a,b,c,d){
+                return (a-c)*(a-c)+(b-d)*(b-d);
+            }
+            var lines = [
+                10,10,300,100,
+                212,177,300,100,
+                90,100,100,300
+            ];
+
+            function rotate2D(arr,ang){
+                var c = Math.cos(ang);
+                var s = Math.sin(ang);
+                return [
+                    c*arr[0]-s*arr[1],
+                    s*arr[0]+c*arr[1],
+                ];
+            }
+
+            var p = {
+                x:300,
+                y:300,
+                dir:[-1,0],
+                plane:[0,1],
+                rot:0,
+                move:function(){
+                    var ang = (pmouseX-mouseX)*0.01;
+                    this.rot+=ang;//please don't talk about this
+                    this.dir = rotate2D(this.dir,ang);
+                    this.plane = rotate2D(this.plane,ang);
+                    if(keys.w){
+                        this.x-=Math.cos(this.rot);
+                        this.y-=Math.sin(this.rot);
+                    }
+                    if(keys.s){
+                        this.x+=Math.cos(this.rot);
+                        this.y+=Math.sin(this.rot);
+                    }
+                    if(keys.a){
+                        this.x-=Math.cos(this.rot+Math.PI*0.5);
+                        this.y-=Math.sin(this.rot+Math.PI*0.5);
+                    }
+                    if(keys.d){
+                        this.x+=Math.cos(this.rot+Math.PI*0.5);
+                        this.y+=Math.sin(this.rot+Math.PI*0.5);
+                    }
+                },
+                collide:function(arr){
+                    for(var i = 0; i < arr.length; i+=4){
+                        var currLine = [arr[i],arr[i+1],arr[i+2],arr[i+3]];
+                        var slope = (currLine[1]-currLine[3])/(currLine[0]-currLine[2]);
+                        var yint = currLine[1]-currLine[0]*slope;
+                        var perpSlope = -1/slope;
+                        var pyint = this.y-this.x*perpSlope;
+
+                        //x=(yint2-yint1)/(slope1-slope2)
+                        var x = (pyint-yint)/(perpSlope-slope);
+                        var y = x*slope+yint;
+                        
+                        var dx = this.x-x,dy=this.y-y;
+                        var l = dx*dx+dy*dy;
+                        if(l<16){
+                            l=Math.sqrt(l);
+                            dx/=l;dy/=l;
+                            var far = 4-l;
+                            this.x+=dx*far;this.y+=dy*far;
+                        }
+                        ctx.fillText(x,0,10+i*2);
+                    }
+                },
+                cast(arr){
+                    var a = 0;
+                    for(var k = 0; k < 400; k++){
+                        var closDis = Infinity;
+                        var closCoord = [0,0];
+                        var camFrac = 2*k/400-1;
+                        var closeInd = 0;
+                        var rayLine = [
+                            this.x,
+                            this.y,
+                            this.x+(this.dir[0]+this.plane[0]*camFrac)*200,
+                            this.y+(this.dir[1]+this.plane[1]*camFrac)*200
+                        ];
+                        for(var i = 0, l = arr.length; i < l; i+=4){
+                            var lin = [lines[i],lines[i+1],lines[i+2],lines[i+3]];
+                            var hit = lineToRay(lin,rayLine);
+                            if(hit){
+                                var d = distsq(hit[0],hit[1],this.x,this.y);
+                                if(d<closDis){
+                                    closDis = d;
+                                    closeInd = i;
+                                    closCoord = hit;
+                                }
+                            }
+                        }
+                        //breakFunction();
+                        if(Math.abs(closDis)!==Infinity){
+                            var h = texture.height/4/Math.sqrt(closDis)*400*Math.sqrt(1+camFrac**2);//this was very very hard to get to just so you know
+                            var whichImg = textures[Math.floor(Math.sqrt(distsq(closCoord[0],closCoord[1],arr[closeInd],arr[closeInd+1]))*2)%textures.length];
+                            //ctx.fillText(Math.floor(Math.sqrt(distsq(x,y,lines[closeInd][0],lines[closeInd][1])))%textures.length,20,20);
+                            ctx.drawImage(whichImg,k,200-h*0.5,1,h);
+                        }
+                    }
+                }
+            };
+
+            var keys = {};
+            function keyPressed(){
+                keys[key.toString()]=true;
+            }
+            function keyReleased(){
+                keys[key.toString()]=!true;
+            }
+            function lineToRay(a,b){
+                
+                var mx = [
+                    Math.max(a[0],a[2]),
+                    Math.min(a[0],a[2]),
+                ];//[Applause]
+                var my = [
+                    Math.max(a[1],a[3]),
+                    Math.min(a[1],a[3]),
+                ];
+                
+                var returner;
+                var evilFlag = false;//somethings vertical and we don't like it
+                var slope = [
+                    (a[1]-a[3])/(a[0]-a[2]),
+                    (b[1]-b[3])/(b[0]-b[2]),//this is the slope formula
+                ];
+                var yint = [
+                    a[1]-a[0]*slope[0],
+                    b[1]-b[0]*slope[1],//this is the y-intercept formula
+                ];
+                if(slope[0]===slope[1]||(Math.abs(slope[0])===Infinity&&Math.abs(slope[1])===Infinity)){
+                    return null;//parralell lines
+                }
+                if(Math.abs(slope[0])===Infinity||Math.abs(slope[1])===Infinity){
+                    if(Math.abs(slope[0])===Infinity){
+                        var y = slope[1]*a[0]+yint[1];
+                        returner = [a[0],y];
+                    }else{
+                        var y = slope[0]*b[0]+yint[0];
+                        returner = [b[0],y];
+                        evilFlag=true;
+                    }
+                }else if(slope[0]!==Infinity&&slope[1]!==Infinity){
+                    //x=(yint2-yint1)/(slope1-slope2)
+                    var x = (yint[1]-yint[0])/(slope[0]-slope[1]);
+                    var y = slope[0]*x+yint[0];
+                    returner = [x,y];
+                }
+                
+                if(returner[0]<mx[0]&&returner[0]>mx[1]&&returner[1]<my[0]&&returner[1]>my[1]){
+                    if(!evilFlag){
+                        if(Math.sign(returner[0]-b[0])===Math.sign(b[2]-b[0])/*Pointing right direction...*/){
+                            return returner;
+                        }
+                    }else{
+                        if(Math.sign(returner[1]-b[1])===Math.sign(b[3]-b[1])/*Pointing right direction...*/){
+                            return returner;
+                        }
+                    }
+                }
+                
+                return null;
+            }
+            
+            function draw() {
+                try{
+                    ctx.fillStyle = "black";
+                    ctx.fillRect(0,0,canvas.width,canvas.height);
+                    p.move();
+                    p.collide(lines);
+                    p.cast(lines);
+                }catch(err){
+                    ctx.clearRect(0,0,400,400);
+                    ctx.fillText(err,-200,20);
+                }
+                isMouseClicked = false;
+                pmouseX = mouseX;
+                pmouseY = mouseY;
+                requestAnimationFrame(draw);
+            };
+            draw();
+            canvas.addEventListener('click',function() {
+                isMouseClicked = true;
+                canvas.requestPointerLock();
+            });
+        }catch(err){
+            alert(err)
+        }
+        </script>
+    <body>
+</html>

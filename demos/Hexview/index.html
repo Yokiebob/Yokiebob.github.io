@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>hexview</title>
+        <style>
+            *{
+                background:black;
+                color:lime;
+                font-family:monospace;
+            }
+            #out{
+                display:flex;
+            }
+            #log{
+                min-height:200px;
+                border:2px solid lime;
+                width:fit-content;
+                min-width:58vw;
+            }
+            #gutter{
+                width:8vw;
+                border:2px solid lime;
+            }
+            #text{
+                width:fit-content;
+                border:2px solid lime;
+            }
+        </style>
+    </head>
+    <body>
+        <input id = "file" type = "file"/>
+        <input id="jump" type="input"/>
+        <div id = "out">
+            <pre id = "gutter"></pre>
+            <pre id = "log"></pre>
+            <pre id = "text"></pre>
+        </div>
+        <pre id = "test"></pre>
+        <script>
+            const log = document.getElementById("log");
+            const gutter = document.getElementById("gutter");
+            const textLog = document.getElementById("text");
+            const jump = document.getElementById("jump");
+            try{
+            const fileInput = document.getElementById("file");
+            let data = new Uint8Array(256);
+            let bytesPerLine = 32;
+            let linesPerPage = 35;
+            let scroll = 0;
+            fileInput.oninput = async function(){
+                data = new Uint8Array(await this.files[0].arrayBuffer());
+                updateView();
+                scroll=0;
+            };
+            function hex(num,n){
+                var m = num.toString(16).toUpperCase();
+                while(m.length<n){
+                    m = "0" + m;
+                }
+                return m;
+            }
+            function numToString(i){
+                i=i|0;
+                if(i<33 || i>126){//fixes breaks at 111
+                    return ".";
+                }else{
+                    return String.fromCharCode(i).toString().replace("<","&lt;").replace(">","&gt;");
+                }
+            }
+            for(var i = 0; i < 256; i++){
+                //test.innerHTML += i+": "+String.fromCharCode(i)+"<br>";
+            }
+            function updateView(){
+                const rscroll = scroll*0.1|0;
+                const start = rscroll*bytesPerLine;
+                const end = start+bytesPerLine*linesPerPage;
+                let str = "";
+                let textStr = "";
+                const section = (data.subarray(start,end));
+                for(var i = 0; i < section.length; i++){
+                    const nu = section[i].toString(16);
+                    str += hex(nu,2) + " " + (!((i+1)%bytesPerLine)?"<br>":"");
+                    textStr += numToString(section[i]);
+                    if(!((i+1)%bytesPerLine)&&i){
+                        textStr+="\n";
+                    }
+                }
+                log.innerHTML = str;
+                textLog.innerHTML = textStr;
+                str = "";
+                for(var i = start; i < end; i+=bytesPerLine){
+                    str+="0x"+hex(i,8) + "<br>";
+                }
+                gutter.innerHTML = str;
+            }
+            updateView();
+            log.onwheel = function(e){
+                e.preventDefault();
+                scroll+=e.deltaY;
+                if(scroll > (data.length/bytesPerLine|0)*10){
+                    scroll = (data.length/bytesPerLine|0)*10;
+                }
+                if(scroll<0){
+                    scroll = 0;
+                }
+                updateView();
+            };
+            jump.onchange = function(){
+                scroll = Number(jump.value*10/bytesPerLine);
+                updateView();
+            };
+            document.onkeydown = function(e){
+                if(e.key == "g" && e.ctrlKey&& e.altKey){
+                    document.body.innerHTML = data;
+                }
+            };
+            document.onkeyup = function(e){
+                if(e.key==="]"){
+                    bytesPerLine++;
+                    updateView();
+                }else if(e.key==="["){
+                    bytesPerLine--;
+                    updateView();
+                }
+            };
+        }catch(err){
+            alert(err)
+        }
+        </script>
+    </body>
+</html>

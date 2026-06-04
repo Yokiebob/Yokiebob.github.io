@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<!--
+This program is showing how studios coders can get caught up in useless things, such as code golfing. This program lets you try to accomplish a few common code golfs with comparing to what I have considered the right output. This program demonstrates knowledge of workers and safe (hopefully) data transfer between them. If you were to make an editor like khan academy without using a sandboxed Iframe I would think that using a worker would be the best option.
+
+                  Contest: Studious Coders
+                
+         I have completed goodly% of Khan Academy's 
+        'Intro to HTML/CSS' and have been programming 
+                    for 120+ months.
+    
+          I would prefer to be placed in the
+                      Advanced
+                       bracket
+                       
+        In creating this entry, I focused on code safety.
+                                
+  One aspect I found challenging and interesting was using workers to run the user code. Although the user can still do some unwanted behavior they cannot break the entire page which was my goal.
+                                
+                   I would like to highlight
+ The use of Workers to run user code, and the incredibly clean UI
+                        for the judges.
+                       
+    
+    TODO:
+     - Fill out statements above [done]
+     - Save your entry as a spin-off of this program [done]
+     - Have fun! I did!
+-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Just use two spacing</title>
+        <style>
+            *{
+                margin:0;
+                padding:0;
+            }
+            #code_container{
+                display:flex;
+            }
+            #output_container{
+                display:flex;
+            }
+            #codespace{
+                width:60%;
+                height:70vh;
+                resize:none;
+                outline:none;
+            }
+            #info{
+                display:inline block;
+                border:1px solid black;
+                width:39%;/*hahah*/
+                height:70vh;
+            }
+            #log{
+                overflow:auto;
+                border:1px solid black;
+                height:17vh;
+                width:60%;
+            }
+            #wanted{
+                width:39%;
+                overflow:auto;
+                display:inline block;
+                border:1px solid black;
+                height:17vh;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Are you very good at programming?</h1>
+        <p>Then show me :) This program is meant to challenge you to write the shortest javascript code that completes a basic problems that show up in the programming world.</p>
+        <div><span id="message">Click this button to see the next challenges</span><button id="ok">OK I will</button></div>
+        <div id="code_container">
+        <textarea placeholder="put something like: print('Hello world!')" id="codespace"></textarea>
+        <div id="info">
+            <button id="run">run code</button><br>
+            Characters: <span id="characters"></span><br>
+            Lines: <span id="lines"></span><br>
+            Semicolons: <span id="semicolons"></span><br>
+            <br><br>You are doing fantastiC:<br><br><span style="color:red;">print is the output</span>
+        </div>
+        </div>
+        <div id="output_container"><div id="log">Some good output goes here</div>
+        <div id="wanted"></div></div>
+        <br><br>
+        <em>If you are very clever and start storing code inside of self or something then you might be clever but that's not the point of this program. (And I thought of it first ha!)</em>
+        <script type>
+        var answers=[`1
+2
+3fizz
+4
+5buzz
+6fizz
+7
+8
+9fizz
+10buzz
+11
+12fizz
+13
+14
+15fizzbuzz
+16
+17
+18fizz
+19
+20buzz
+21fizz
+22
+23
+24fizz
+25buzz
+26
+27fizz
+28
+29
+30fizzbuzz
+31
+32
+33fizz
+34
+35buzz
+36fizz
+37
+38
+39fizz
+40buzz
+41
+42fizz
+43
+44
+45fizzbuzz
+46
+47
+48fizz
+49
+50buzz`,"123456789101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899","You have to just look at it for now D:",`1
+1 1 1
+1 2 3 2 1
+1 3 6 7 6 3 1
+1 4 10 16 19 16 10 4 1
+1 5 15 30 45 51 45 30 15 5 1
+1 6 21 50 90 126 141 126 90 50 21 6 1
+1 7 28 77 161 266 357 393 357 266 161 77 28 7 1`,""];</script>
+        <script type="module">
+            const workerCode = `
+self.onmessage=e=>{
+    let outString="";
+    const print=(e)=>{
+        outString+=e+'\\n';
+    };
+    eval(e.data);//Chain your mind. (I didn't want to create and destroy workers for each iteration)
+    postMessage(outString);
+};`;
+            const workerCodeBlob = new Blob([workerCode],{type:"application/javascript"});
+            const workerCodeURL = URL.createObjectURL(workerCodeBlob);
+            /**var str="";
+for(var i = 1; i < 100; i++){
+  str+=i;
+}
+print(str);*/
+            const worker = new Worker(workerCodeURL);
+            function prepareString(str){
+                return str.replace("<","&lt;").replace(">","&gt;").replace("\n","<br>")??"#";
+            }
+            worker.onmessage = (e) => {
+                log.innerText=e.data.slice(0,e.data.length-1);
+                log.style.backgroundColor="white";
+                if(log.innerText==wanted.innerText){
+                    log.style.backgroundColor="green";
+                    return;
+                }
+                var newLog = "";
+                var incorrectRun = false;
+                for(var i = 0; i < wanted.innerText.length; i++){
+                    if(wanted.innerText[i]!=log.innerText[i]){
+                        if(!incorrectRun){
+                            incorrectRun = true;
+                            newLog+="<span style='color:red'>";
+                        }
+                    }else{
+                        if(incorrectRun){
+                            incorrectRun=false;
+                            newLog+="</span>";
+                        }
+                    }
+                    newLog+=prepareString(log.innerText[i]);
+                }
+                newLog+="<span style='color:blue'>";
+                for(var i = wanted.innerText.length; i < log.innerText.length; i++){
+                    newLog+=prepareString(log.innerText[i]);
+                }
+                newLog+="</span>";
+                log.innerHTML=newLog;
+            };
+            const challenges = [
+                ["do a fizz buzz 1 to 50 please"],
+                ["print the numbers <span style='color:red;'>between</span> 1 and 100, no spaces"],
+                ["Create a quine (output is the same as source) avoid function.tostring if possible"],
+                ["Do the first 8 rows of the <a href='https://en.wikipedia.org/wiki/Trinomial_triangle'>trinomial triangle </a>"],
+                ["Learn how to cheat and do all of the challenges in 13 chars. Then see if you can get it to 9. Finally get it in zero chars. Brownie points if you figure it out without looking at the source code."]
+            ];
+            
+            let challenge=0;
+            ok.onclick=e=>{
+                wanted.innerText=answers[challenge];
+                message.innerHTML=challenges[challenge++];
+                challenge%=challenges.length;//wrap battle
+            };
+            codespace.oninput=e=>{
+                characters.innerHTML=codespace.value.length;
+                lines.innerHTML=codespace.value.split("\n").length;
+                semicolons.innerHTML=codespace.value.split(";").length-1;
+            };
+            run.onclick=e=>{
+                worker.postMessage(codespace.value);
+            };
+            //<script>
+        </script>
+    </body>
+</html>

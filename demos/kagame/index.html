@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body{
+            margin:0;
+        }
+        canvas{
+            border:1px solid black;
+        }
+    </style>
+</head>
+<body>
+<canvas id = "c" width = "600" height = "600"></canvas>
+<script>
+/**
+                 Contest: Underground
+                
+         I have completed 100% of Khan Academy's 
+        'Intro to JS' and have been programming 
+                    for many months (lunar or calendar).
+    
+          I would prefer to be placed in the
+               [Advanced or intermediate]
+                       bracket
+                       
+    
+    TODO:
+     - Fill out statements above Done
+     - Save your entry as a spin-off of this program Done
+     - Have fun! NO
+**/
+try{
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const constrain = function(a,b,c){
+    if(a<b){return b;}
+    if(a>c){return c;}
+    return a;
+};
+const lerp=(a,b,c)=>a+c*(b-a);
+const random=(a,b)=>Math.random()*(b-a)+a;
+ctx.font = "15px monospace";
+//textFont(createFont("monospace",15));
+//imageMode(CENTER);
+var keys = {};
+document.onkeydown = function(e){
+    keys[e.key.toString()]=keys[e.keyCode]=true;
+};
+document.onkeyup = function(e){
+    keys[e.key.toString()]=keys[e.keyCode]=!true;
+};
+
+function hit(a,b){
+    return a.x+a.w>b[0]&&a.x<b[0]+b[2]&&a.y+a.h>b[1]&&a.y<b[1]+b[3];
+}
+function distsq(a,b,c,d){
+    return (a-c)*(a-c)+(b-d)*(b-d);
+}
+var sorting = function(a,b){
+    return Math.abs(a[0]+a[1])-Math.abs(b[0]-b[1]);
+};
+var camShake = 0;
+var player;
+var level = [2,0];
+var levels = [
+    [
+        {
+            level:[
+                [0,550,250,50],
+                [300,550,250,50],
+                [0,0,600,50],
+                [0,50,50,500],
+                [550,50,50,600],
+            ],
+            timer:0,
+            other:function(){
+                ctx.fillStyle = "black";
+                ctx.fillText("PLAY",258,580);
+                ctx.fillText("Underground contest\nentry:\n\n\n\nGet to the concert".substring(0,this.timer)+((this.timer%10<5)?"":"_"),200,200);
+                this.timer+=0.5;
+            }
+        },//only one here on this level
+    ],
+    [
+        {
+            level:[
+                [50,0,200,250],
+                [300,0,300,250],
+                [0,0,50,550],
+                [0,550,600,50],
+            ],
+            other:function(){}
+        },
+        {
+            level:[
+                [0,0,600,250],
+                [0,550,250,50],
+                [350,550,250,50],
+                [250,590,50,10],
+                [250,570,30,20],
+            ]
+        }
+    ],
+    [
+        {
+            level:[
+                [0,550,600,50],
+                [0,0,50,550],
+                [0,0,600,50],
+                [550,0,50,500],
+            ],
+            timer:1000,
+            bossStarted:false,
+            boss:{
+                x:300,
+                y:300,
+                rendx:300,
+                rendy:300,
+                rad:50,
+                dirX:0,
+                dirY:0,
+                attack:"throw"//maybe they throw hands
+            },
+            bullets:[],
+            other:function(){
+                var beneath = player.x<300;
+                var winston = "";
+                var person = "";
+                if(beneath && !this.bossStarted){
+                    this.timer++;
+                    if(this.timer<100){
+                        person = "Where is the concert";
+                    }else if(this.timer<200){
+                        winston = "It should be around here somewhere";
+                    }else if(this.timer<300){
+                        person = "Any idea where I should go?";
+                    }else if(this.timer<400){
+                        winston = "To the concert I heard\nthe band will be there";
+                    }else if(this.timer<500){
+                        person = "I know...";
+                    }else if(this.timer<700){
+                        winston = "Wait I think I know"+"...".slice(0,this.timer*0.02%4);
+                    }else if(this.timer<800){
+                        winston = "Wait a bit. You can't go there!";
+                    }else if(this.timer<900){
+                        person = "Try and stop me!";
+                    }else if(this.timer<1000){
+                        winston = "I WILL!";
+                    }else if(this.timer<1002){
+                        camShake = 10;
+                        this.timer = 0;
+                        this.level[3][3]=550;
+                        this.bossStarted = true;
+                    }
+                }
+                if(this.bossStarted){
+                    player.drawHealth();
+                    for(var i = this.bullets.length-1; i > 0 ; i--){
+                        var dead = false;
+                        var b = this.bullets[i];
+                        b[0]-=Math.cos(b[2])*5;
+                        b[1]-=Math.sin(b[2])*5;
+                        ctx.beginPath();
+                        ctx.arc(b[0],b[1],5,0,Math.PI*2);
+                        ctx.fill();
+                        var vx = constrain(b[0],player.x,player.x+player.w);
+                        var vy = constrain(b[1],player.y,player.y+player.h);
+                        if(distsq(vx,vy,b[0],b[1])<16){
+                            dead = true;
+                            camShake = 4;
+                            player.health--;
+                        }
+                        if(b[1]>600){
+                            dead = true;
+                        }
+                        if(dead){
+                            this.bullets.splice(i,1);
+                        }
+                    }
+                    switch(this.boss.attack){
+                        case "throw":{
+                            this.boss.y = lerp(this.boss.y,150,0.03);
+                            this.boss.x = lerp(this.boss.x,300,0.03);
+                            this.boss.rendx=this.boss.x;
+                            this.boss.rendy=this.boss.y;
+                            if(distsq(this.boss.x,this.boss.y,300,150)<16){
+                                this.timer++;
+                                if(Math.sin(this.timer*0.1)>0 && this.timer%3===1){
+                                    var a = Math.atan2(this.boss.y-player.y-player.h/2,this.boss.x-player.x-player.w/2)+random(-0.3,0.3);
+                                    this.bullets.push([this.boss.x,this.boss.y,a]);
+                                }
+                            }
+                            if(this.timer>400){
+                                this.timer = 0;
+                                this.boss.attack = "dive";
+                            }
+                        }break;
+                        case "dive":{
+                            this.boss.rendx = this.boss.x;
+                            this.boss.rendy = this.boss.y;
+                            this.timer++;
+                            if(this.timer===100){
+                                var ang = Math.atan2(this.boss.y-player.y,this.boss.x-player.x);
+                                this.boss.dirX = Math.cos(ang);
+                                this.boss.dirY = Math.sin(ang);
+                            }else if(this.timer>100){
+                                if(this.boss.y<530){
+                                    this.boss.x-=this.boss.dirX*10;
+                                    this.boss.y-=this.boss.dirY*10;
+                                }else if(this.timer>400){
+                                    this.boss.attack = "throw";
+                                    this.timer = 0;
+                                }
+                            }
+                        }break;
+                    }
+                }
+                //image(getImage("creatures/Winston"),this.boss.rendx,this.boss.rendy,this.boss.rad*2,this.boss.rad*2);
+                ctx.beginPath();
+                ctx.arc(this.boss.rendx, this.boss.rendy,this.boss.rad,0,Math.PI*2);
+                ctx.fill();
+                ctx.fillText((beneath||this.bossStarted)?winston:"Move to left",150,400);
+                ctx.fillText(person,player.x-60,player.y-40);
+            }
+        },
+        {
+            level:[
+                [0,550,600,50],
+                [0,0,20,500],
+                [350,0,250,50],
+                [0,0,300,50],
+                [50,274,50,50],
+                [150,360,50,50],
+                [400,400,50,50],
+                [200,450,50,50],
+                [100,500,50,50],
+                [130,340,20,20],
+                [100,200,50,50],
+                [0,230,50,50],
+                [190,150,20,20],
+                [250,100,50,50],
+                [340,50,10,50],
+            ]
+        }
+    ],
+    
+];
+player = {
+    x:200,
+    y:200,
+    px:200,
+    py:200,
+    deadX:300,
+    deadY:300,
+    deadLevel:[0,0],
+    vx:0,
+    vy:0,
+    w:20,
+    h:20,
+    jumpTime:0,
+    health:5,
+    update:function(){
+        this.px = this.x;
+        this.py = this.y;
+        this.x+=this.vx*=0.9;
+        this.y+=this.vy*=0.98;
+        this.vy+=0.2;
+        if((keys.w) && this.jumpTime > 0){
+            this.vy = -7;
+            this.jumpTime = 0;
+        }
+        this.jumpTime--;
+        if(keys.a){
+            this.vx-=0.5;
+        }
+        if(keys.d){
+            this.vx+=0.5;
+        }
+    },
+    draw:function(){
+        ctx.fillStyle= "black";
+        ctx.fillRect(this.x,this.y,this.w,this.h);
+    },
+    die:function(){
+        this.x = this.deadX;
+        this.y = this.deadY;
+        level=this.deadLevel;
+        this.health = 5;
+    },
+    drawHealth:function(){
+        if(this.health<0){
+            this.die();
+        }
+        ctx.fillStyle = "black";
+        for(var i = 0; i < this.health; i++){
+            ctx.fillRect(60,60+i*40,30,30);
+        }
+    },
+    hitBlocks:function(arr){
+        for(var i = 0; i < arr.length; i++){
+            var block = arr[i];
+            if(hit(this,block)){
+                if(this.py+this.h<=block[1]){
+                    this.vy = 0;
+                    this.jumpTime = 4;
+                    this.y=block[1]-this.h;
+                }else if(this.px+this.w<=block[0]){
+                    this.vx = 0;
+                    this.x=block[0]-this.w;
+                }else if(this.px>=block[0]+block[2]){
+                    this.vx = 0;
+                    this.x=block[0]+block[2];
+                }else if(this.py>=block[1]+block[3]){
+                    this.vy = 0;
+                    this.y=block[1]+block[3];
+                }else{
+                    //classic aabb check now, for getting inside blocks. No velocity, that will be corrected next frame hopefully
+                    var sides = [
+                        [this.x+this.w-block[0],0],
+                        [this.x-block[0]-block[2],0],
+                        [0,this.y+this.h-block[1]],
+                        [0,this.y-block[1]-block[3]],
+                    ];
+                    sides.sort(sorting);
+                    this.x-=sides[0][0];
+                    this.y-=sides[0][1];
+                }
+            }
+        }
+    },
+    updateLevels:function(){
+        if(this.y>canvas.height){
+            this.y=0;
+            level[0]++;
+        }else if(this.y<-this.h){
+            this.y=canvas.height-this.h;
+            level[0]--;
+        }
+        if(this.x>canvas.width){
+            this.x=0;
+            level[1]++;
+        }else if(this.x<-this.w){
+            this.x=canvas.width-this.w;
+            level[1]--;
+        }
+    }
+};
+
+function draw() {
+    try{
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.save();
+    ctx.translate(random(-camShake,camShake),random(-camShake,camShake));
+    camShake *= 0.95;
+    player.updateLevels();
+    player.update();
+    var blocks = levels[level[0]][level[1]].level;
+    player.hitBlocks(blocks);
+    player.draw();
+    if(levels[level[0]][level[1]].other){
+        levels[level[0]][level[1]].other();
+    }
+    blocks.forEach(function(e){
+        ctx.fillRect(...e);
+    });
+    ctx.restore();
+    }catch(err){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "black";
+        ctx.fillText(err,20,200);
+    }
+    requestAnimationFrame(draw);
+}
+draw();
+}catch(err){
+    alert(err);
+}
+</script>
+</body>
+</html>
