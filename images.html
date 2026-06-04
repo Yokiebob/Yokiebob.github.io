@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<link rel = "stylesheet" href = "./index.css">
+    <style>
+		*{image-rendering:pixelated;}
+		img{
+			border:1px solid red;
+		}
+		#closeup{
+			position:fixed;
+			top:50vh;
+			left:50vw;
+			transform:translate(-50%,-50%);
+		}
+    </style>
+</head>
+<body>
+	<h1>Images</h1>
+	<a href='index.html'><h1>Back</h1></a>
+    <div id='imgs'></div>
+	<div id="closeup" onclick='this.innerHTML="";'></div>
+    <script>
+        for(var i = 0; i < 145; i++){
+			imgs.innerHTML+=`<img onclick="(window.gf=document.getElementById('closeup')).innerHTML='<img src=&quot;${"images/img"+i+".png"}&quot;>';" src="${"images/img"+i+".png"}" width=${(window.innerWidth/3|0)-30}></img>`;
+        }
+    </script>
+</body>
+</html>
