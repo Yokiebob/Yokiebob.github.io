@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>gravy juice world</title>
+        <style>
+            *{
+                margin:0;
+                overflow:clip;
+            }
+            #myCanvas{
+                image-rendering:pixelated;
+                width:600px;
+                height:600px;
+            }
+        </style>
+    </head>
+    <body>
+        <pre id = "timer" style="position:absolute;top:0px;left:0px;background-color:white;">0.00</pre>
+        <canvas id = "myCanvas" width = "200" height = "200"></canvas>
+        <pre id = "pos"></pre>
+        <pre id = "logger"></pre>
+        <script id = "vertex-shader" type = "glsl">#version 300 es
+            in vec4 a_pos;
+            in vec4 a_col;
+            in vec2 a_texCoord;
+            
+            uniform mat4 u_matrix;
+            
+            out vec4 v_col;
+            out vec2 v_texCoord;
+            out vec3 v_pos;
+            void main(){
+                gl_Position = u_matrix * a_pos;
+                v_pos = gl_Position.xyz;
+                v_col = a_col;
+                v_texCoord = a_texCoord;
+            }
+        </script>
+        <script id = "fragment-shader" type = "glsl">#version 300 es
+            precision highp float;
+            in vec4 v_col;
+            in vec3 v_pos;
+            in vec2 v_texCoord;
+            
+            uniform sampler2D bathroom;
+            uniform int u_win;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                o_FragColor = vec4((texture(bathroom,v_texCoord).xyz)/(length(v_pos)*0.2),1);
+                if(u_win==1){
+                    o_FragColor = vec4(0,1,1,1);
+                }
+            }
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+        <script src = "../glmatrix.js"></script>
+        <script type = "module">
+        const log = (function(){
+            const logger = document.getElementById("logger");
+            return (...a) => {
+                logger.innerHTML += a + "<br>";
+            };
+        })();
+        try{
+            const clamp = (a,b,c) => {
+                if(a<b){
+                    return b;
+                }else if(a>c){
+                    return c;
+                }
+                return a;
+            };
+            const lerp = (a,b,c) => a+(b-a)*c;
+            
+            const textureCanvas = new OffscreenCanvas(400,400);
+            const t_ctx = textureCanvas.getContext("2d");
+            t_ctx.fillRect(0,0,400,400);
+            t_ctx.fillStyle = "red";
+            t_ctx.fillRect(100,100,200,200);
+            
+            const canvas = document.getElementById("myCanvas");
+            const gl = canvas.getContext("webgl2",{preserveDrawingBuffer:true});
+            
+            const mouse = {
+                x:0,
+                y:0,
+                dx:0,
+                dy:0,
+                resetDelta(){
+                    this.dx = this.dy = 0;
+                }
+            };
+            canvas.onmousemove = function(e){
+                mouse.x = e.x;
+                mouse.y = e.y;
+                mouse.dx += e.movementX;
+                mouse.dy += e.movementY;
+            };
+            canvas.onclick = function(){
+                canvas.requestPointerLock();
+            };
+            const keys = {};
+            document.onkeydown = function(e){
+                keys[e.key.toString().toLowerCase()] = true;
+                if(e.key.toString() == " ") e.preventDefault();
+            };
+            document.onkeyup = function(e){
+                keys[e.key.toString().toLowerCase()] = !true;
+                if(e.key.toString() == "m"){
+                    player.fly^=1;
+                }
+            };
+            
+            const createProgram = (vsh, fsh) => {
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vsh);
+                gl.compileShader(vertexShader);
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fsh);
+                gl.compileShader(fragmentShader);
+                
+                const program = gl.createProgram();
+                gl.attachShader(program, vertexShader);
+                gl.attachShader(program, fragmentShader);
+                gl.linkProgram(program);
+                if(!gl.getProgramParameter(program, gl.LINK_STATUS)){
+                    log(gl.getProgramInfoLog(program));
+                    log(gl.getShaderInfoLog(vertexShader));
+                    log(gl.getShaderInfoLog(fragmentShader));
+                }
+                return program;
+            };
+            const program = createProgram(
+                document.getElementById("vertex-shader").text,
+                document.getElementById("fragment-shader").text
+            );
+            gl.useProgram(program);
+            
+            const vao = gl.createVertexArray();
+            gl.bindVertexArray(vao);
+            
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            
+            function cubeData(x,y,z,w,h,d){
+                //x,y,z,color,texCoordx,texCoordy
+                return [x,y,z,,0,0,x,y+h,z,,0,h,x+w,y,z,,w,0,x+w,y,z,,w,0,x,y+h,z,,0,h,x+w,y+h,z,,w,h,x,y,z+d,,0,0,x+w,y,z+d,,0,w,x,y+h,z+d,,h,0,x,y+h,z+d,,h,0,x+w,y,z+d,,0,w,x+w,y+h,z+d,,h,w,x,y,z,,0,0,x,y,z+d,,0,d,x,y+h,z,,h,0,x,y+h,z,,h,0,x,y,z+d,,0,d,x,y+h,z+d,,h,d,x+w,y,z,,0,0,x+w,y+h,z,,0,h,x+w,y,z+d,,d,0,x+w,y,z+d,,d,0,x+w,y+h,z,,0,h,x+w,y+h,z+d,,d,h,x,y,z,,0,0,x+w,y,z,,0,w,x,y,z+d,,d,0,x,y,z+d,,d,0,x+w,y,z,,0,w,x+w,y,z+d,,d,w,x,y+h,z,,0,0,x,y+h,z+d,,0,d,x+w,y+h,z,,w,0,x+w,y+h,z,,w,0,x,y+h,z+d,,0,d,x+w,y+h,z+d,,w,d,];
+            }
+            const sphereData = (() => {
+                const data = [];
+                const res = 10;
+                for(var i = -res; i < res; i++){
+                    for(var k = -res; k < res; k++){
+                        data.push(
+                            i,k,res,0,0,0,
+                            i+1,k,res,0,2,0,
+                            i,k+1,res,0,0,2,
+                            
+                            i+1,k+1,res,0,2,2,
+                            i,k+1,res,0,0,2,
+                            i+1,k,res,0,2,0,
+                            
+                            i,k,-res,0,0,0,
+                            i,k+1,-res,0,0,2,
+                            i+1,k,-res,0,2,0,
+                            
+                            i+1,k+1,-res,0,2,2,
+                            i+1,k,-res,0,2,0,
+                            i,k+1,-res,0,0,2,
+                            
+                            
+                            i,res,k,0,0,0,
+                            i,res,k+1,0,0,2,
+                            i+1,res,k,0,2,0,
+                            
+                            i+1,res,k+1,0,2,2,
+                            i+1,res,k,0,2,0,
+                            i,res,k+1,0,0,2,
+                            
+                            i,-res,k,0,0,0,
+                            i+1,-res,k,0,2,0,
+                            i,-res,k+1,0,0,2,
+                            
+                            i+1,-res,k+1,0,2,2,
+                            i,-res,k+1,0,0,2,
+                            i+1,-res,k,0,2,0,
+                            
+                            
+                            res,i,k,0,0,0,
+                            res,i+1,k,0,2,0,
+                            res,i,k+1,0,0,2,
+                            
+                            res,i+1,k+1,0,2,2,
+                            res,i,k+1,0,0,2,
+                            res,i+1,k,0,2,0,
+                            
+                            -res,i,k,0,0,0,
+                            -res,i,k+1,0,0,2,
+                            -res,i+1,k,0,2,0,
+                            
+                            -res,i+1,k+1,0,2,2,
+                            -res,i+1,k,0,2,0,
+                            -res,i,k+1,0,0,2,
+                        );
+                    }
+                }
+                
+                return function(x,y,z,s){
+                    const ndata = Object.create(data);
+                    for(var i = 0; i < ndata.length; i+=6){
+                        const l = Math.sqrt(ndata[i]**2+ndata[i+1]**2+ndata[i+2]**2)/s;
+                        ndata[i]/=l;
+                        ndata[i+1]/=l;
+                        ndata[i+2]/=l;
+                        ndata[i]+=x;
+                        ndata[i+1]+=y;
+                        ndata[i+2]+=z;
+                    }
+                    return ndata;
+                };
+            })();
+            
+            const data = [];
+            const blockData = [];
+            const checkPointData = [];
+            function addBlock(x,y,z,w,h,d){
+                blockData.push([x,y,z,w,h,d]);
+                data.push(...cubeData(x,y,z,w,h,d));
+            }
+            function addCheckPoint(x,y,z,s){
+                checkPointData.push([x,y,z,s]);
+                data.push(...sphereData(x,y,z,s));
+            }
+            
+            addCheckPoint(-16,30,35,20);
+            addCheckPoint(-11,38,-25,2);
+            addCheckPoint(11,-300,14,2);
+            addCheckPoint(10,57,10,5);
+            const fillSphereEnd = data.length;
+            
+            addBlock(-10,-20,-10,40,20,40);
+            addBlock(-10,40,-10,40,10,40);
+            addBlock(-20,-20,-10,10,70,40);
+            addBlock(20,0,-10,10,40,40);
+            addBlock(-20,-20,-20,40,70,10);
+            
+            // for(var i = 0; i < 10; i++){
+            //     addBlock(
+            //         (Math.random()*4|0)*2,
+            //         i*2,
+            //         (Math.random()*4|0)*2,
+            //         2,
+            //         2,
+            //         2,
+            //     )
+            // }
+            
+            addBlock(-20,10,20,20,20,20);
+            addBlock(-2,2,2,10,2,5);
+            addBlock(-2,0,2,1,2,1);
+            addBlock(7,0,2,1,2,1);
+            addBlock(2,0,8,2,1,2);
+            addBlock(-8,4,2,5,2,5);
+            addBlock(-10,4,2,2,2,2);
+            addBlock(-10,6,-2,2,2,2);
+            addBlock(-10,6,5,4,4,4);
+            addBlock(-2,10,5,4,30,4);
+            addBlock(-4,10,7,2,2,2);
+            addBlock(2,10,7,2,2,2);
+            addBlock(2,14,5,2,0,2);
+            addBlock(4,14,5,0,2,2);
+            addBlock(0,14,3,4,4,2);
+            for(var i = 0; i < 7; i++){
+                addBlock(-10,16+i*2,4+i*2,4,2,2);
+            }
+            
+            addBlock(-22,29,26,2,2,2);
+            addBlock(-22,30,18,2,2,2);
+            addBlock(-22,24,20,2,2,2);
+            addBlock(-22,25,16,2,2,2);
+            addBlock(-22,25,12,2,2,2);
+            addBlock(-22,31,11,2,2,2);
+            addBlock(-22,28,7,2,2,2);
+            addBlock(-22,34,7,2,2,2);
+            addBlock(-22,37,4,2,2,2);
+            addBlock(-22,37,-3,2,2,2);
+            addBlock(-22,33,-12,2,2,2);
+            addBlock(-24,34,-20,4,2,2);
+
+            addBlock(-18,26,-22,2,2,2);
+            addBlock(-18,26,-28,6,2,2);
+            addBlock(-14,26,-32,2,2,4);
+            addBlock(-10,22,-30,2,2,2);
+            addBlock(-10,22,-28,2,6,2);
+            addBlock(-4,22,-28,2,2,2);
+            addBlock(-4,22,-30,2,6,2);
+            addBlock(2,22,-24,2,2,2);
+            addBlock(0,22,-24,2,6,2);
+
+            addBlock(6,24,-22,2,2,2);
+            addBlock(4,24,-22,2,4,2);
+            addBlock(4,29,-26,2,2,2);
+            addBlock(4,32,-30,2,2,2);
+            addBlock(1,35,-32,2,2,2);
+
+            addBlock(-16,28,-30,20,10,10);
+            addBlock(0,39,-22,2,2,2);
+            addBlock(2,40,-22,2,4,2);
+            addBlock(6,44,-22,2,2,2);
+            addBlock(14,48,-22,2,2,2);
+            addBlock(12,40,-22,2,2,2);
+            addBlock(15,43,-22,2,2,2);
+            addBlock(20,44,-22,2,2,6);
+            addBlock(26,44,-12,2,2,2);
+            addBlock(30,45,-8,2,2,2);
+
+            addBlock(30,-20,-8,4,2,4);
+            addBlock(30,-26,0,2,2,2);
+            addBlock(28,-26,0,2,6,2);
+            addBlock(26,-26,-6,2,2,2);
+            addBlock(28,-26,-6,2,6,2);
+            addBlock(18,-26,-4,2,2,2);
+            addBlock(18,-26,-6,2,6,2);
+            addBlock(10,-26,-8,2,2,2);
+            addBlock(10,-26,-6,2,6,2);
+            addBlock(8,-26,-2,2,2,2);
+            addBlock(10,-26,-2,2,6,2);
+            
+            addBlock(8,-24,5,2,4,6);
+            addBlock(12,-24,5,2,4,6);
+            addBlock(10,-24,5,2,2,6);
+            addBlock(6,-24,11,2,4,6);
+            addBlock(14,-24,11,2,4,6);
+            addBlock(8,-24,17,6,4,2)
+            addBlock(8,-294,11,2,270,6);
+            addBlock(12,-294,11,2,270,6);
+            addBlock(10,-294,11,2,270,2);
+            addBlock(10,-294,15,2,270,2);
+
+            addBlock(14,-302,9,2,8,10);
+            addBlock(6,-302,9,2,8,10);
+            addBlock(8,-302,9,6,8,2);
+            addBlock(8,-302,17,6,8,2);
+            
+            //addBlock(14,-306,9,2,10,2);
+            
+            const floatData = new Float32Array(data);
+            const byteData = new Uint8Array(floatData.buffer);
+            for(var i = 12; i < byteData.length; i+=24){
+                if(i>fillSphereEnd*4){
+                    byteData[i] = Math.random()*255;
+                    byteData[i+1] = Math.random()*255;
+                    byteData[i+2] = Math.random()*255;
+                    byteData[i+3] = 255;
+                }else{
+                    byteData[i+4] = 0;
+                }
+            }
+            gl.bufferData(gl.ARRAY_BUFFER,floatData, gl.STATIC_DRAW);
+            
+            const attribs = {};
+            for(const i of ["a_pos","a_col","a_texCoord"]){
+                attribs[i] = gl.getAttribLocation(program, i);
+            }
+            
+            gl.enableVertexAttribArray(attribs.a_pos);
+            gl.enableVertexAttribArray(attribs.a_col);
+            gl.enableVertexAttribArray(attribs.a_texCoord);
+            
+            gl.vertexAttribPointer(
+                attribs.a_pos,
+                3,
+                gl.FLOAT,
+                false,
+                24,
+                0);
+            gl.vertexAttribPointer(
+                attribs.a_col,
+                4,
+                gl.UNSIGNED_BYTE,
+                true,
+                24,
+                12);
+            gl.vertexAttribPointer(
+                attribs.a_texCoord,
+                2,
+                gl.FLOAT,
+                false,
+                24,
+                16);
+            
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textureCanvas);
+            // const g = new Image();
+            // g.src = "https://www.kasandbox.org/programming-images/avatars/mr-pink.png";
+            // g.onload = function(){
+            //     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, g);
+            //     gl.generateMipmap(gl.TEXTURE_2D);
+            // };
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            //gl.generateMipmap(gl.TEXTURE_2D);
+            
+            const uniforms = {};
+            for(const i of ["u_matrix","u_win"]){
+                uniforms[i] = gl.getUniformLocation(program, i);
+            }
+            //gl.clearColor(0,49/255,83/255,1);
+            gl.clearColor(0,0,0,1);
+            gl.enable(gl.DEPTH_TEST);
+            //gl.enable(gl.CULL_FACE);
+            //<script>
+            const player = {
+                i:vec3.fromValues(1,0,0),
+                j:vec3.fromValues(0,1,0),
+                k:vec3.fromValues(0,0,1),
+                nj:vec3.fromValues(0,1,0),
+                vi:vec3.fromValues(1,0,0),
+                vj:vec3.fromValues(0,1,0),
+                vk:vec3.fromValues(0,0,1),
+                p:vec3.fromValues(3,1,13),
+                v:vec3.create(),
+                checkPointPos:vec3.fromValues(3,1,13),
+                rad:0.3,
+                jumpTime:0,
+                fly:false,
+                touchGrass:false,
+                won:false,
+                r:{
+                    pitch:0,
+                    roll:0,
+                    yaw:0,
+                },
+                toMatrix(){
+                    const matrix = mat4.create();
+                    mat4.rotate(matrix,matrix,this.r.pitch,this.vi);
+                    mat4.mul(matrix,mat4.transpose(mat4.create(),mat4.fromValues(...this.vi,0,...this.vj,0,...this.vk,0,0,0,0,1)),matrix);
+                    //mat4.rotateX(matrix,matrix,this.r.pitch);
+                    //mat4.rotateY(matrix,matrix,this.r.yaw);
+                    mat4.translate(matrix,matrix,this.p.map(e=>-e));
+                    /*const v = [
+                        Math.abs(this.grav[0]),
+                        Math.abs(this.grav[1]),
+                        Math.abs(this.grav[2])
+                    ];
+                    var c1 = Math.sqrt(v[0]**2+v[1]**2);
+                    var s1 = v[2];
+                    var c2 = c1?v[0]/c1:1;
+                    var s2 = c1?v[1]/c1:0;
+                    mat4.multiply(matrix,matrix,[
+                        v[0],-s2,-s1*c2,0,
+                        v[1],c2,-s1*s2,0,
+                        v[2],0,c1,0,
+                        0,0,0,1
+                    ]);*/
+                    return matrix;
+                },
+                move(){
+                    //const c = Math.cos(this.r.yaw);
+                    //const s = Math.sin(this.r.yaw);
+                    //const cSide = Math.cos(this.r.yaw+Math.PI*0.5);
+                    //const sSide = Math.sin(this.r.yaw+Math.PI*0.5);
+
+                    //mouse.dx*=0.005
+                    const mat = mat4.create();
+                    mat4.rotate(mat,mat,-mouse.dx*0.005,this.j);
+                    vec3.transformMat4(this.i,this.i,mat);
+                    vec3.transformMat4(this.j,this.j,mat);
+                    vec3.transformMat4(this.k,this.k,mat);
+
+                    const speed = 0.01;
+                    if(keys.w){
+                        //this.vx-=cSide*speed;
+                        //this.vz-=sSide*speed;
+                        //this.vx -= this.i[0]*c*speed;
+                        //this.vy -= this.i[1]*c*speed;
+                        //this.vz -= this.i[2]*c*speed;
+                        vec3.scaleAndAdd(this.v,this.v,this.k,-speed);
+                        //vec3.scaleAndAdd(this.v,this.v,this.i,s*speed);
+                    }
+                    if(keys.s){
+                        //this.vx += this.i[0]*c*speed;
+                        //this.vy += this.i[1]*c*speed;
+                        //this.vz += this.i[2]*c*speed;
+                        //this.vx+=cSide*speed;
+                        //this.vz+=sSide*speed;
+                        vec3.scaleAndAdd(this.v,this.v,this.k,speed);
+                    }
+                    if(keys.a){
+                        //this.vx -= this.k[0]*cSide*speed;
+                        //this.vy -= this.k[1]*cSide*speed;
+                        //this.vz -= this.k[2]*cSide*speed;
+                        //this.vx-=c*speed;
+                        //this.vz-=s*speed;
+                        vec3.scaleAndAdd(this.v,this.v,this.i,-speed);
+                    }
+                    if(keys.d){
+                        //this.vx += this.k[0]*cSide*speed;
+                        //this.vy += this.k[1]*cSide*speed;
+                        //this.vz += this.k[2]*cSide*speed;
+                        //this.vx+=c*speed;
+                        //this.vz+=s*speed;
+                        vec3.scaleAndAdd(this.v,this.v,this.i,speed);
+                    }
+                    if(keys.r){
+                        this.p = vec3.clone(this.checkPointPos);
+                        [this.i,this.j,this.k] = [vec3.fromValues(1,0,0),vec3.fromValues(0,1,0),vec3.fromValues(0,0,1)];
+                        this.p[1]+=1;//just a little above.
+                        this.v = vec3.create();
+                        if (vec3.exactEquals(this.checkPointPos,[3,1,13])) start = performance.now();
+                    }
+                    if(!this.fly){
+                        if(keys[" "] && this.touchGrass){
+                            //this.vx += this.grav[0]*0.2;
+                            //this.vy += this.grav[1]*0.2;
+                            //this.vz += this.grav[2]*0.2;
+                            vec3.scaleAndAdd(this.v,this.v,this.j,.2);
+                        }
+                    }else{
+                        if(keys[" "]){
+                            vec3.scaleAndAdd(this.v,this.v,this.j,speed);
+                        }
+                        if(keys.shift){
+                            vec3.scaleAndAdd(this.v,this.v,this.j,-speed);
+                        }
+                    }
+                    
+                    //this.r.yaw += mouse.dx*=0.005;
+                    //this.r.yaw%=Math.PI*2;
+                    
+                    this.r.pitch = clamp(this.r.pitch + mouse.dy*0.005, -Math.PI*0.5,Math.PI*0.5);
+                    
+                    //this.v[0]*=.9;
+                    //this.v[1]*=.99;
+                    //this.v[2]*=.9;
+                    const vi = vec3.dot(this.i,this.v);
+                    const vj = vec3.dot(this.j,this.v);
+                    const vk = vec3.dot(this.k,this.v);
+                    this.v = vec3.create();
+                    vec3.scaleAndAdd(this.v,this.v,this.i,.9*vi);
+                    vec3.scaleAndAdd(this.v,this.v,this.j,.99*vj);
+                    vec3.scaleAndAdd(this.v,this.v,this.k,.9*vk);
+                    vec3.add(this.p,this.p,this.v);
+                    if(!this.fly){
+                        //this.v[1]-=0.005;
+                        vec3.scaleAndAdd(this.v,this.v,this.j,-.005);
+                    }else{
+                       this.v[1]*=0.9;
+                    }
+                    this.touchGrass = false;
+                    this.nj = vec3.create();
+                },
+                collideArr(arr){
+                    for(var i = 0; i < arr.length; i++){
+                        const block = arr[i];
+                        //const vx = clamp(this.p[0],block[0],block[0]+block[3]);
+                        //const vy = clamp(this.p[1],block[1],block[1]+block[4]);
+                        //const vz = clamp(this.p[2],block[2],block[2]+block[5]);
+                        const vv = this.p.map((e,i)=>clamp(e,block[0+i],block[0+i]+block[3+i]));
+                        //let dx = this.x-vx,
+                        //dy=this.y-vy,
+                        //dz=this.z-vz;
+                        let dv = vec3.sub(vec3.create(),this.p,vv);
+                        //let d = dx*dx+dy*dy+dz*dz;
+                        let d = vec3.squaredLength(dv);
+                        if(d<this.rad*this.rad+.001){
+                            d=Math.sqrt(d);
+                            if(d){
+                                //dx/=d;dy/=d;dz/=d;
+                                vec3.normalize(dv,dv);
+                                const far = this.rad-d;
+                                //this.x+=dx*far;
+                                //this.y+=dy*far;
+                                //this.z+=dz*far;
+                                vec3.scaleAndAdd(this.p,this.p,dv,far);
+                                
+                                const velAlongNormal =
+                                    //-this.vx * dx+
+                                    //-this.vy * dy+
+                                    //-this.vz * dz;//dot product
+                                    -vec3.dot(this.v,dv);
+                                if(velAlongNormal<0){
+                                    continue;
+                                }
+                                const impulseLength = velAlongNormal*1.01;
+                                //this.vx+=dx*impulseLength;
+                                //this.vy+=dy*impulseLength;
+                                //this.vz+=dz*impulseLength;
+                                vec3.scaleAndAdd(this.v,this.v,dv,impulseLength);
+                                //if(this.touchGrass){
+                                //    this.grav[0]+=dx;this.grav[1]+=dy;this.grav[2]+=dz;
+                                //}else{
+                                //    this.grav[0]=dx;this.grav[1]=dy;this.grav[2]=dz;
+                                //}
+                                vec3.add(this.nj,this.nj,dv);
+                            }else{
+                                this.p[1] = block[1] + block[4] + this.rad*2;
+                                this.v[1] = 0;
+                            }
+                            this.touchGrass = true;
+                        }
+                    }
+                },
+                handleCheckPoints(arr){
+                    for(var i = 0; i < arr.length; i++){
+                        let checkPoint = arr[i];
+                        //let dx = this.x-checkPoint[0];
+                        //let dy = this.y-checkPoint[1];
+                        //let dz = this.z-checkPoint[2];
+                        let dv = vec3.sub(vec3.create(),this.p,vec3.fromValues(checkPoint[0],checkPoint[1],checkPoint[2]));
+                        //let d = dx*dx+dy*dy+dz*dz;
+                        let d = vec3.squaredLength(dv);
+                        if(d<((checkPoint[3])+this.rad)**2+.001){
+                            if (i==arr.length-1) {gl.uniform1i(uniforms.u_win,1);this.won=true};
+                            d=Math.sqrt(d);
+                            //dx/=d;dy/=d;dz/=d;
+                            vec3.normalize(dv,dv);
+                            const far = this.rad+(checkPoint[3])-d;
+                            //this.x+=dx*far;
+                            //this.y+=dy*far;
+                            //this.z+=dz*far;
+                            vec3.scaleAndAdd(this.p,this.p,dv,far);
+                            this.jumpTime = 10;
+                            
+                            const velAlongNormal =
+                                //-this.vx * dx+
+                                //-this.vy * dy+
+                                //-this.vz * dz;//dot product
+                                -vec3.dot(this.v,dv);
+                            if(velAlongNormal<0){
+                                continue;
+                            }
+                            const impulseLength = velAlongNormal*1.01;
+                            //this.vx+=dx*impulseLength;
+                            //this.vy+=dy*impulseLength;
+                            //this.vz+=dz*impulseLength;
+                            vec3.scaleAndAdd(this.v,this.v,dv,impulseLength);
+                            //if(this.touchGrass){
+                            //    this.grav[0]+=dx;this.grav[1]+=dy;this.grav[2]+=dz;
+                            //}else{
+                            //    this.grav[0]=dx;this.grav[1]=dy;this.grav[2]=dz;
+                            //}
+                            vec3.add(this.nj,this.nj,dv);
+                            this.touchGrass = true;
+                        }
+                    }
+                },
+                rotateIJK(){
+                    if (vec3.squaredLength(this.nj) == 0 || vec3.equals(this.j,vec3.normalize(this.nj,this.nj))) return;
+                    const about = vec3.cross(vec3.create(),this.j,this.nj);
+                    let ang = vec3.angle(this.j,this.nj);
+                    if (vec3.dot(this.nj,this.j) < -.99 && this.touchGrass) ang=Math.PI,vec3.set(about,...this.k);
+                    const mat = mat4.create();
+                    mat4.rotate(mat,mat,ang,about);
+                    vec3.transformMat4(this.i,this.i,mat);
+                    vec3.transformMat4(this.j,this.j,mat);
+                    vec3.transformMat4(this.k,this.k,mat);
+                },
+                rotateV(){
+                    let ang = vec3.angle(this.j,this.vj);
+                    const v = vec3.clone(this.vj);
+                    this.vi = vec3.clone(this.i);
+                    this.vj = vec3.clone(this.j);
+                    this.vk = vec3.clone(this.k);
+                    if (Math.abs(ang) < .001) return;
+                    const about = vec3.cross(vec3.create(),this.j,v);
+                    if (vec3.dot(v,this.j) < -.999) ang=Math.PI,vec3.set(about,...this.k);
+                    const mat = mat4.create();
+                    mat4.rotate(mat,mat,Math.abs(ang) < .1 ? 0 : ang-Math.sign(ang)*.1,about);
+                    vec3.transformMat4(this.vi,this.vi,mat);
+                    vec3.transformMat4(this.vj,this.vj,mat);
+                    vec3.transformMat4(this.vk,this.vk,mat);
+                }
+            };
+            cancelAnimationFrame(window.parent.raf);
+            const pos = document.getElementById("pos");
+            const timer = document.getElementById("timer");
+            let start = performance.now();
+            const render = () => {
+                try{
+                player.move();
+                player.collideArr(blockData);
+                player.handleCheckPoints(checkPointData);
+                player.rotateIJK();
+                player.rotateV();
+                pos.innerText = player.p.map(e=>e.toFixed(2)).join(",");
+                if (!player.won) timer.innerText = ((performance.now()-start)/1000).toFixed(2);
+                
+                const matrix = mat4.create();
+                mat4.perspective(matrix,Math.PI/2,canvas.width/canvas.height,0.01,100000);
+                mat4.multiply(matrix,matrix,player.toMatrix());
+                gl.uniformMatrix4fv(uniforms.u_matrix,false,matrix);
+                
+                //gl.enable(gl.DEPTH_TEST);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.uniform1i(uniforms.u_win,0);
+                gl.drawArrays(gl.TRIANGLES,0,data.length/6);
+                //gl.disable(gl.DEPTH_TEST);
+                gl.uniform1i(uniforms.u_win,1);
+                gl.drawArrays(gl.LINES,0,data.length/6);
+                mouse.resetDelta();
+                window.parent.raf = requestAnimationFrame(render);
+                }catch(err){
+                    log(err);
+                }
+            };
+            render();
+            log(gl.getError());
+            window.onresize = function(){
+                canvas.width = window.innerWidth/4;
+                canvas.height = window.innerHeight/4;
+                gl.viewport(0,0,canvas.width,canvas.height);
+                canvas.style.width = window.innerWidth+"px";
+                canvas.style.height = window.innerHeight+"px";
+            };
+            window.onresize();
+        }catch(err){
+            log(err);
+        }
+        </script>
+    </body>
+</html>

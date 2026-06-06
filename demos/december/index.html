@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<!--The other wise man-->
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>dec</title>
+        <style>
+            *{
+                margin:0;
+            }
+            #myCanvas{
+                image-rendering:pixelated;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id = "myCanvas"></canvas>
+        <pre id = "logger"></pre>
+        <script id = "main-vertex-shader" type = "glsl">#version 300 es
+            precision highp float;
+            layout(location=0)in vec4 a_pos;
+            layout(location=1)in vec4 a_col;
+            
+            uniform mat4 u_matrix;
+            
+            out vec4 v_col;
+            void main(){
+                gl_Position = u_matrix * a_pos;
+                v_col = a_col;
+            }
+        </script>
+        <script id = "main-fragment-shader" type = "glsl">#version 300 es
+            precision highp float;
+            
+            in vec4 v_col;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                o_FragColor = v_col;
+            }
+        </script>
+        <script id = "post-vertex-shader" type = "glsl">#version 300 es
+            precision highp float;
+            void main(){
+                gl_Position = vec4[](
+                    vec4(1,1,0,1),
+                    vec4(-3,1,0,1),
+                    vec4(1,-3,0,1)
+                )[gl_VertexID];
+            }
+        </script>
+        <script id = "bloom-fragment-shader">#version 300 es
+            precision highp float;
+            uniform sampler2D u_texture;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                vec4 col = texelFetch(u_texture,ivec2(gl_FragCoord.xy),0);
+                if(col.a < 0.01){
+                    o_FragColor = vec4(col.xyz,1);
+                }else{
+                    o_FragColor = vec4(0,0,0,0);
+                }
+            }
+        </script>
+        <script id = "blurx-fragment-shader" type = "glsl">#version 300 es
+        
+            precision highp float;
+            uniform sampler2D u_texture;
+            uniform sampler2D u_normal;//u_nique more like hahahadsgvusjdnkc
+            out vec4 o_FragColor;
+            const float color_ratios[] = float[](
+                0.027743733063505603,
+0.06655375580846169,
+0.12433878524108985,
+0.18091186502984205,
+0.205,
+0.18091186502984205,
+0.12433878524108985,
+0.06655375580846169,
+0.027743733063505603
+            );
+            int blurLength = 20;
+            void main(){
+                vec4 o = vec4(0);
+                for(int i = 0; i < blurLength+1; i++){
+                    o += texelFetch(u_texture,ivec2(gl_FragCoord.xy+vec2(i-blurLength/2,0)),0)/float(blurLength);
+                }
+                o_FragColor = o;
+            }
+        </script>
+        <script id = "blury-combine-fragment-shader" type = "glsl">#version 300 es
+        
+            precision highp float;
+            uniform sampler2D u_normal;
+            uniform sampler2D u_texture;
+            out vec4 o_FragColor;
+            const float color_ratios[] = float[](
+                0.027743733063505603,
+0.06655375580846169,
+0.12433878524108985,
+0.18091186502984205,
+0.205,
+0.18091186502984205,
+0.12433878524108985,
+0.06655375580846169,
+0.027743733063505603
+            );
+            int blurLength = 20;
+            void main(){
+                vec4 o = vec4(0);
+                for(int i = 0; i < blurLength+1; i++){
+                    o += texelFetch(u_texture,ivec2(gl_FragCoord.xy+vec2(0,i-blurLength/2)),0)/float(blurLength);
+                }
+                vec4 other = texelFetch(u_normal,ivec2(gl_FragCoord.xy),0);
+                o_FragColor = other + o;
+            }
+        </script>
+        <script src = "../glmatrix.js"></script>
+        <script type = "module">
+        const log = (function(){
+            const logger = document.getElementById("logger");
+            return function(...a){
+                logger.innerHTML += a + "<br>";
+            };
+        })();
+        const clamp = (i,j,k) => i<j?j:i>k?k:i;//ijjikki
+        const distsq = (a,b,c,d) => a*a-a*c+c*c+b*b-b*d+d*d;//aaabbbcccddd
+        const lerp = (a,b,c) => a+(b-a)*c;
+        function fract(a){
+            return a-(a|0);
+        }
+        function sr1(a){
+            return fract(Math.sin(a*49.9476)*16382.971);
+        }
+        function smoothstep(x){
+            return x*x*(3-2*x);
+        }
+        function n1(s){
+            var f0 = s|0;
+            var f1 = f0+1;
+            var d = -f0+s;
+            var sf0 = sr1(f0),
+                sf1 = sr1(f1);
+            return lerp(sf0,sf1,smoothstep(d));
+        }
+        try{
+            const canvas = document.getElementById("myCanvas");
+            const gl = canvas.getContext("webgl2");
+            
+            const input = (function(){
+                const keys = {};
+                const mouse = {
+                    dx:0,
+                    dy:0,
+                    reset(){
+                        this.dx = this.dy = 0;
+                    }
+                };
+                canvas.onclick = function(){
+                    canvas.requestPointerLock();
+                };
+                canvas.onmousemove = function(e){
+                    mouse.dx = e.movementX;
+                    mouse.dy = e.movementY;
+                };
+                document.onkeydown = function(e){
+                    keys[e.key.toString().toLowerCase()] = true;
+                    e.preventDefault();
+                };
+                document.onkeyup = function(e){
+                    keys[e.key.toString().toLowerCase()] = false;
+                    e.preventDefault();
+                };
+                return {
+                    mouse,
+                    keys
+                };
+            })();
+            const {mouse,keys} = input;
+            
+            const player = {
+                pos:vec3.create(),
+                vel:vec3.create(),
+                r:{
+                    pitch:0,
+                    yaw:0,
+                    roll:0,
+                },
+                rad:0.2,
+                jumpTime:0,
+                update(){
+                    this.vel[0]*=0.95;
+                    this.vel[1]*=0.98;
+                    this.vel[2]*=0.95;
+                    this.vel[1]-=0.002;
+                    vec3.add(this.pos,this.pos,this.vel);
+                    
+                    this.r.pitch += mouse.dy*0.005;
+                    this.r.pitch = clamp(this.r.pitch,-Math.PI*0.5,Math.PI*0.5);
+                    
+                    this.r.yaw += mouse.dx*0.005;
+                    this.r.yaw %= Math.PI*2;
+                    
+                    var d = [0,0];
+                    if(keys.w){
+                        d[0] -= Math.cos(this.r.yaw+Math.PI*0.5);
+                        d[1] -= Math.sin(this.r.yaw+Math.PI*0.5);
+                    }
+                    if(keys.s){
+                        d[0] += Math.cos(this.r.yaw+Math.PI*0.5);
+                        d[1] += Math.sin(this.r.yaw+Math.PI*0.5);
+                    }
+                    if(keys.d){
+                        d[0] += Math.cos(this.r.yaw);
+                        d[1] += Math.sin(this.r.yaw);
+                    }
+                    if(keys.a){
+                        d[0] -= Math.cos(this.r.yaw);
+                        d[1] -= Math.sin(this.r.yaw);
+                    }
+                    var dl = Math.sqrt(d[0] ** 2 + d[1] ** 2);
+                    if(dl){
+                        this.vel[0]+=d[0]/dl*0.002;
+                        this.vel[2]+=d[1]/dl*0.002;
+                    }
+                    if(this.jumpTime>0 && keys[" "]){
+                        this.vel[1] = Math.max(0.08,this.vel[1]+0.08);
+                        this.jumpTime = 0;
+                    }
+                    this.jumpTime--;
+                },
+                toMatrix(){
+                    const matrix = mat4.create();
+                    mat4.rotateX(matrix,matrix,this.r.pitch);
+                    mat4.rotateY(matrix,matrix,this.r.yaw);
+                    mat4.translate(matrix,matrix,[-this.pos[0],-this.pos[1],-this.pos[2]]);
+                    return matrix;
+                },
+                hitBoxArr(arr){
+                    for(var i = 0; i < arr.length; i++){
+                        const box = arr[i];
+                        const vx = clamp(this.pos[0],box[0],box[0]+box[3]);
+                        const vy = clamp(this.pos[1],box[1],box[1]+box[4]);
+                        const vz = clamp(this.pos[2],box[2],box[2]+box[5]);
+                        var dx = this.pos[0]-vx,
+                            dy = this.pos[1]-vy,
+                            dz = this.pos[2]-vz,
+                            d=dx*dx+dy*dy+dz*dz;
+                        if(d < this.rad*this.rad){
+                            if(d){
+                                const bvx = box[13] ?? 0;
+                                const bvy = box[14] ?? 0;
+                                const bvz = box[15] ?? 0;
+                                d=Math.sqrt(d);
+                                dx/=d;dy/=d;dz/=d;
+                                var far = this.rad-d;
+                                this.pos[0]+=dx*far;
+                                this.pos[1]+=dy*far;
+                                this.pos[2]+=dz*far;
+                                var vAN = (bvx-this.vel[0])*dx+(bvy-this.vel[1])*dy+(bvz-this.vel[2])*dz;
+                                if(vAN<0)continue;
+                                this.vel[0]+=vAN*dx;
+                                this.vel[1]+=vAN*dy;
+                                this.vel[2]+=vAN*dz;
+                                if(dy>0.5){
+                                    this.jumpTime = 5;
+                                }
+                            }else{
+                                var dirs = [
+                                    [this.pos[0]-box[0]+this.rad,0,0],
+                                    [this.pos[0]-box[0]-box[3]-this.rad,0,0],
+                                    [0,this.pos[1]-box[1]-box[4]-this.rad,0],
+                                    [0,this.pos[1]-box[1]+this.rad,0],
+                                    [0,0,this.pos[2]-box[2]+this.rad],
+                                    [0,0,this.pos[2]-box[2]-box[5]-this.rad]
+                                ];
+                                dirs.sort(function(a,b){
+                                    return Math.abs(a[0]+a[1]+a[2])-Math.abs(b[0]+b[1]+b[2]);
+                                });
+                                this.pos[0]-=dirs[0][0];
+                                this.pos[1]-=dirs[0][1];
+                                this.pos[2]-=dirs[0][2];
+                                var [dx,dy,dz] = dirs[0],d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+                                dx/=d;dy/=d;dz/=d;
+                                const bvx = box[13] ?? 0;
+                                const bvy = box[14] ?? 0;
+                                const bvz = box[15] ?? 0;
+                                var vAN = (bvx-this.vel[0])*dx+(bvy-this.vel[1])*dy+(bvz-this.vel[2])*dz;
+                                this.vel[0]+=vAN*dx;
+                                this.vel[1]+=vAN*dy;
+                                this.vel[2]+=vAN*dz;
+                                if(dy>0.5){
+                                    this.jumpTime = 5;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            player.pos[0] = 0;
+            player.pos[1] = 0;
+            player.pos[2] = -10;
+            
+            function createProgram(vsh,fsh){
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader,vsh);
+                gl.compileShader(vertexShader);
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader,fsh);
+                gl.compileShader(fragmentShader);
+                const program = gl.createProgram();
+                gl.attachShader(program,vertexShader);
+                gl.attachShader(program,fragmentShader);
+                gl.linkProgram(program);
+                if(!gl.getProgramParameter(program, gl.LINK_STATUS)){
+                    log(gl.getProgramInfoLog(program));
+                    if(!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)){
+                        log(gl.getShaderInfoLog(vertexShader));
+                    }
+                    if(!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)){
+                        log(gl.getShaderInfoLog(fragmentShader));
+                    }
+                }
+                return program;
+            }
+            
+            const bluryProgram = createProgram(
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("blury-combine-fragment-shader").text
+            );
+            const bleep0 = gl.getUniformLocation(bluryProgram,"u_texture");
+            const bleep1 = gl.getUniformLocation(bluryProgram,"u_normal");
+            
+            const blurxProgram = createProgram(
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("blurx-fragment-shader").text
+            );
+            const blurxFramebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER,blurxFramebuffer);
+            let colorBlurxTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,colorBlurxTexture);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBlurxTexture,0);
+            
+            const bloomProgram = createProgram(
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("bloom-fragment-shader").text
+            );
+            const bloomFramebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+            let colorBloomTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,colorBloomTexture);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBloomTexture,0);
+            
+            const mainProgram = createProgram(
+                document.getElementById("main-vertex-shader").text,
+                document.getElementById("main-fragment-shader").text
+            );
+            const mainFramebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+            let colorTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+            gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorTexture,0);
+            let depthbuffer = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER,depthbuffer);
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24,canvas.width,canvas.height);
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depthbuffer);
+            
+            gl.useProgram(mainProgram);
+            const mainVao = gl.createVertexArray();
+            gl.bindVertexArray(mainVao);
+            
+            const mainVertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER,mainVertexBuffer);
+            
+            
+            let mainData = [];
+            const boxData = [];
+            const swingBoxData = [];
+            const moveBlockData = [];
+            function addBlock(x,y,z,w,h,d){
+                mainData.push(
+                    ...rectPrism(x,y,z,w,h,d)
+                );
+                boxData.push([x,y,z,w,h,d]);
+            }
+            function addSwingBlock(x,y,z,w,h,d){
+                mainData.push(
+                    ...rectPrism(x,y,z,w,h,d)
+                );
+                swingBoxData.push([x,y,z,w,h,d]);
+            }
+            function addMoveBlock(x,y,z,w,h,d,x1,y1,z1,g){
+                moveBlockData.push([x,y,z,w,h,d,x1,y1,z1,x,y,z,g??Math.random()*10]);
+            }
+            function updateMoveData(t){
+                let newData = [];
+                for(var i = 0; i < moveBlockData.length; i++){
+                    const block = moveBlockData[i];
+                    const old = [block[0],block[1],block[2]];
+                    block[0] = lerp(block[9],block[6],Math.sin(t+block[12])*0.5+0.5);
+                    block[1] = lerp(block[10],block[7],Math.sin(t+block[12])*0.5+0.5);
+                    block[2] = lerp(block[11],block[8],Math.sin(t+block[12])*0.5+0.5);
+                    block[13] = block[0]-old[0];
+                    block[14] = block[1]-old[1];
+                    block[15] = block[2]-old[2];
+                    newData.push(...rectPrism(block[0],block[1],block[2],block[3],block[4],block[5]));//🫠
+                }
+                newData = new Float32Array(newData);
+                const byteData = new Uint8Array(newData.buffer);
+                for(var i = 12; i < byteData.length; i+=16){
+                    byteData[i] = 0;
+                    byteData[i+1] = 0;
+                    byteData[i+2] = 0;
+                    byteData[i+3] = 0;
+                }
+                gl.bindBuffer(gl.ARRAY_BUFFER,mainVertexBuffer);
+                gl.bufferSubData(gl.ARRAY_BUFFER,startMoveData, new Float32Array(newData));
+            }
+            
+            addBlock(-10,-20,-10,20,80,20);
+            addBlock(-5, 100,-5,10,121,10);
+            
+            for(var i = 0;  i < 10; i++){
+                addBlock(10,-10+i,-10+i*2,2,1,2);
+            }
+            for(var i = 0;  i < 10; i++){
+                addBlock(10,10+i,8-i*2,2,1,2);
+            }
+            addBlock(-12,17,-12,2,2,22);
+            addBlock(8,50,8,2,20,2);
+            
+            var snakee = [8,70,8];
+            var addd = [0,0,0];
+            for(var i = 0; i < 500; i++){
+                addBlock(...snakee,1,1,1);
+                addd[0] += n1(i*0.5)*2;
+                addd[1] += n1(i*0.1+52.4)*0.5+0.2;
+                addd[2] += n1(i*0.5+471.476)*2;
+                var d = snakee[0]**2+snakee[2]**2;
+                if(d<10*10){
+                    d=Math.sqrt(d);
+                    addd[0]+=d*0.1;
+                    addd[2]+=d*0.1;
+                }
+                var leng = Math.sqrt(addd[0]**2+addd[1]**2+addd[2]**2);
+                addd[0]/=leng;
+                addd[1]/=leng;
+                addd[2]/=leng;
+                snakee[0]+=addd[0]*1;
+                snakee[1]+=addd[1]*1;
+                snakee[2]+=addd[2]*1;
+            }
+            addBlock(11,152,-7,2,2,17);
+            addBlock(-6,152,-7,17,2,2);
+            for(var i = 0; i < 10; i++){
+                addBlock(-6,154+i,-5+i,1,1,1);
+            }
+            for(var i = 0; i < 12; i++){
+                addBlock(-6+i,164+i,5,1,1,1);
+            }
+            for(var i = 0; i < 30; i++){
+                addBlock(4-i,195.01+i,-6,1,2,1);
+            }
+            for(var i = 0; i < 4; i++){
+                addBlock(-8+i,142-i,12,1,1,1);
+            }
+            
+            boxData.push([-200,-50,-200,400,40,400]);
+            for(var i = -200; i < 200; i+=4){
+                for(var k = -200; k < 200; k+=4){
+                    var n = [
+                        Math.abs(noise.perlin2(i*0.1,k*0.1)*(distsq(i,k,0,0))*0.002),
+                        Math.abs(noise.perlin2((i+4)*0.1,k*0.1)*(distsq(i+4,k,0,0))*0.002),
+                        Math.abs(noise.perlin2(i*0.1,(k+4)*0.1)*(distsq(i,k+4,0,0))*0.002),
+                        Math.abs(noise.perlin2((i+4)*0.1,(k+4)*0.1)*(distsq(i+4,k+4,0,0))*0.002)
+                    ];
+                    mainData.push(
+                        i,-10+n[0],k,0,
+                        i+4,-10+n[1],k,0,
+                        i,-10+n[2],k+4,0,
+                        i+4,-10+n[3],k+4,0,
+                        i+4,-10+n[1],k,0,
+                        i,-10+n[2],k+4,0,
+                    );
+                }
+            }
+            
+            var swingBlockStart = mainData.length;
+            addSwingBlock(-50,220,-50,100,100,100);
+            for(var i = 0; i < 1000; i++){
+                var g = [Math.random()*1000-500,Math.random()*1000-500,Math.random()*1000-500];
+                var l = Math.sqrt(g[0]**2+g[1]**2+g[2]**2);
+                g[0]/=l*0.0045;g[1]/=l*0.0045;g[2]/=l*0.0045;
+                g[1] = Math.abs(g[1]);
+                addSwingBlock(g[0],g[1],g[2],2,2,2);
+            }
+            
+            const startMoveData = mainData.length;
+            addMoveBlock(10,-10,10,2,10,2,10,0,10);
+            
+            for(var i = 0; i < 10; i++){
+                addMoveBlock(10-i*2,18,-12,2,2,2,6-i*2,18,-12,i*0.2);
+            }
+            
+            for(var i = 0; i < 10; i+=1){
+                addMoveBlock(-12+i*2,15+i*5,10,2,10,2,-12+i*2,5+i*5,10);
+            }
+            addMoveBlock(-10,120,10,2,20,2,-10,125,10);
+            for(var i = 0; i < 10; i++){
+                addMoveBlock(-8+i*2,125,10,2,20,2,-7+i*2,125+i,10);
+            }
+            for(var i = 0; i < 10; i++){
+                addMoveBlock(5,176+i*2,4-i,1,1,1,5,176+i*2+1,4-i,i*Math.PI);
+            }
+            
+            
+            mainData = new Float32Array(mainData);
+            const byteData = new Uint8Array(mainData.buffer);
+            for(var i = 12; i < byteData.length; i+=16){
+                if(i<swingBlockStart*4){
+                    byteData[i] = Math.random()*255;
+                    byteData[i+1] = Math.random()*255;
+                    byteData[i+2] = Math.random()*255;
+                    byteData[i+3] = 255;
+                }else{
+                    byteData[i] = 255;
+                    byteData[i+1] = 255;
+                    byteData[i+2] = 255;
+                    byteData[i+3] = 0;
+                }
+            }
+            
+            gl.bufferData(gl.ARRAY_BUFFER,mainData,gl.STATIC_DRAW);
+            
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0,3,gl.FLOAT,false,16,0);
+            gl.enableVertexAttribArray(1);
+            gl.vertexAttribPointer(1,4,gl.UNSIGNED_BYTE,true,16,12);            
+            
+            const mainUniform = {};
+            for(var i of ["u_matrix"]){
+                mainUniform[i] = gl.getUniformLocation(mainProgram,i);
+            }
+            
+            gl.enable(gl.DEPTH_TEST);
+            function render(){
+                gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+                gl.useProgram(mainProgram);
+                const matrix = mat4.create();
+                mat4.perspective(matrix,Math.PI/2,canvas.width/canvas.height,0.05, Infinity);
+                mat4.multiply(matrix,matrix,player.toMatrix());
+                gl.uniformMatrix4fv(mainUniform.u_matrix,false,matrix);
+                gl.clearColor(0,0,0,1);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLES,0,mainData.length/4);
+                
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+                gl.useProgram(bloomProgram);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                
+                gl.bindTexture(gl.TEXTURE_2D,colorBloomTexture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,blurxFramebuffer);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.useProgram(blurxProgram);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                
+                gl.useProgram(bluryProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D,colorBlurxTexture);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                gl.uniform1i(bleep0,0);
+                gl.uniform1i(bleep1,1);//bleep
+                gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                gl.activeTexture(gl.TEXTURE0);
+            }
+            let frameCount = 0;
+            function loop(){
+                frameCount++;
+                try{
+                    updateMoveData(frameCount*0.05);
+                    player.update();
+                    player.hitBoxArr(moveBlockData);
+                    player.hitBoxArr(boxData);
+                    render();
+                    mouse.reset();
+                    requestAnimationFrame(loop);
+                }catch(err){
+                    log(err);
+                }
+            }
+            loop();
+            
+            log(gl.getError());
+            
+            window.onresize = function(){
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                canvas.style.width = window.innerWidth+"px";
+                canvas.style.height = window.innerHeight+"px";
+                gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+                colorTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorTexture,0);
+                depthbuffer = gl.createRenderbuffer();
+                gl.bindRenderbuffer(gl.RENDERBUFFER,depthbuffer);
+                gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16,canvas.width,canvas.height);
+                gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depthbuffer);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+                colorBloomTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorBloomTexture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBloomTexture,0);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,blurxFramebuffer);
+                colorBlurxTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorBlurxTexture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBlurxTexture,0);
+            };
+            window.onresize();
+        }catch(err){
+            log(err);
+        }finally{
+            log("This is a test");
+        }
+        function rectPrism(x,y,z,w,h,d){
+                /**
+                 * Possibly flipped depending on purposes.
+                 * backward
+                 * forward
+                 * left
+                 * right
+                 * bottom
+                 * top
+                */
+                return [
+                    /**
+                     * Vertex,
+                     * color
+                     * texture coordinates
+                     * [repeat]**/
+                    x,y,z,
+                    0,
+                    //0,0,
+                    x,y+h,z,
+                    0,
+                    //0,1,
+                    x+w,y,z,
+                    0,
+                    //1,0,
+
+                    x+w,y,z,
+                    0,
+                    //1,0,
+                    x,y+h,z,
+                    0,
+                    //0,1,
+                    x+w,y+h,z,
+                    0,
+                    //1,1,
+                    
+                    x,y,z+d,
+                    0,
+                    //0,0,
+                    x+w,y,z+d,
+                    0,
+                    //0,1,
+                    x,y+h,z+d,
+                    0,
+                    //1,0,
+
+                    x,y+h,z+d,
+                    0,
+                    //1,0,
+                    x+w,y,z+d,
+                    0,
+                    //0,1,
+                    x+w,y+h,z+d,
+                    0,
+                    //1,1,
+
+
+                    x,y,z,
+                    0,
+                    //0,0,
+                    x,y,z+d,
+                    0,
+                    //0,1,
+                    x,y+h,z,
+                    0,
+                    //1,0,
+
+                    x,y+h,z,
+                    0,
+                    //1,0,
+                    x,y,z+d,
+                    0,
+                    //0,1,
+                    x,y+h,z+d,
+                    0,
+                    //1,1,
+
+
+                    x+w,y,z,
+                    0,
+                    //0,0,
+                    x+w,y+h,z,
+                    0,
+                    //0,1,
+                    x+w,y,z+d,
+                    0,
+                    //1,0,
+
+                    x+w,y,z+d,
+                    0,
+                    //1,0,
+                    x+w,y+h,z,
+                    0,
+                    //0,1,
+                    x+w,y+h,z+d,
+                    0,
+                    //1,1,
+
+
+                    x,y,z,
+                    0,
+                    //0,0,
+                    x+w,y,z,
+                    0,
+                    //0,1,
+                    x,y,z+d,
+                    0,
+                    //1,0,
+
+                    x,y,z+d,
+                    0,
+                    //1,0,
+                    x+w,y,z,
+                    0,
+                    //0,1,
+                    x+w,y,z+d,
+                    0,
+                    //1,1,
+
+
+                    x,y+h,z,
+                    0,
+                    //0,0,
+                    x,y+h,z+d,
+                    0,
+                    //0,1,
+                    x+w,y+h,z,
+                    0,
+                    //1,0,
+
+                    x+w,y+h,z,
+                    0,
+                    //1,0,
+                    x,y+h,z+d,
+                    0,
+                    //0,1,
+                    x+w,y+h,z+d,
+                    0,
+                    //1,1,
+                ];
+            }
+        </script>
+        <script type>
+            /*
+            COPIED FROM GITHUB THIS ISN'T MY CODE!!!
+             * A speed-improved perlin and simplex noise algorithms for 2D.
+             *
+             * Based on example code by Stefan Gustavson (stegu@itn.liu.se).
+             * Optimisations by Peter Eastman (peastman@drizzle.stanford.edu).
+             * Better rank ordering method by Stefan Gustavson in 2012.
+             * Converted to Javascript by Joseph Gentle.
+             *
+             * Version 2012-03-09
+             *
+             * This code was placed in the public domain by its original author,
+             * Stefan Gustavson. You may use it as you see fit, but
+             * attribution is appreciated.
+             *
+             */
+            
+            (function(global){
+              var module = global.noise = {};
+            
+              function Grad(x, y, z) {
+                this.x = x; this.y = y; this.z = z;
+              }
+              
+              Grad.prototype.dot2 = function(x, y) {
+                return this.x*x + this.y*y;
+              };
+            
+              Grad.prototype.dot3 = function(x, y, z) {
+                return this.x*x + this.y*y + this.z*z;
+              };
+            
+              var grad3 = [new Grad(1,1,0),new Grad(-1,1,0),new Grad(1,-1,0),new Grad(-1,-1,0),
+                           new Grad(1,0,1),new Grad(-1,0,1),new Grad(1,0,-1),new Grad(-1,0,-1),
+                           new Grad(0,1,1),new Grad(0,-1,1),new Grad(0,1,-1),new Grad(0,-1,-1)];
+            
+              var p = [151,160,137,91,90,15,
+              131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+              190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,
+              88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,
+              77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,
+              102,143,54, 65,25,63,161, 1,216,80,73,209,76,132,187,208, 89,18,169,200,196,
+              135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,
+              5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+              223,183,170,213,119,248,152, 2,44,154,163, 70,221,153,101,155,167, 43,172,9,
+              129,22,39,253, 19,98,108,110,79,113,224,232,178,185, 112,104,218,246,97,228,
+              251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,
+              49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,
+              138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+              // To remove the need for index wrapping, double the permutation table length
+              var perm = new Array(512);
+              var gradP = new Array(512);
+            
+              // This isn't a very good seeding function, but it works ok. It supports 2^16
+              // different seed values. Write something better if you need more seeds.
+              module.seed = function(seed) {
+                if(seed > 0 && seed < 1) {
+                  // Scale the seed out
+                  seed *= 65536;
+                }
+            
+                seed = Math.floor(seed);
+                if(seed < 256) {
+                  seed |= seed << 8;
+                }
+            
+                for(var i = 0; i < 256; i++) {
+                  var v;
+                  if (i & 1) {
+                    v = p[i] ^ (seed & 255);
+                  } else {
+                    v = p[i] ^ ((seed>>8) & 255);
+                  }
+            
+                  perm[i] = perm[i + 256] = v;
+                  gradP[i] = gradP[i + 256] = grad3[v % 12];
+                }
+              };
+            
+              module.seed(0);
+            
+              /*
+              for(var i=0; i<256; i++) {
+                perm[i] = perm[i + 256] = p[i];
+                gradP[i] = gradP[i + 256] = grad3[perm[i] % 12];
+              }*/
+            
+              // Skewing and unskewing factors for 2, 3, and 4 dimensions
+              var F2 = 0.5*(Math.sqrt(3)-1);
+              var G2 = (3-Math.sqrt(3))/6;
+            
+              var F3 = 1/3;
+              var G3 = 1/6;
+            
+              // 2D simplex noise
+              module.simplex2 = function(xin, yin) {
+                var n0, n1, n2; // Noise contributions from the three corners
+                // Skew the input space to determine which simplex cell we're in
+                var s = (xin+yin)*F2; // Hairy factor for 2D
+                var i = Math.floor(xin+s);
+                var j = Math.floor(yin+s);
+                var t = (i+j)*G2;
+                var x0 = xin-i+t; // The x,y distances from the cell origin, unskewed.
+                var y0 = yin-j+t;
+                // For the 2D case, the simplex shape is an equilateral triangle.
+                // Determine which simplex we are in.
+                var i1, j1; // Offsets for second (middle) corner of simplex in (i,j) coords
+                if(x0>y0) { // lower triangle, XY order: (0,0)->(1,0)->(1,1)
+                  i1=1; j1=0;
+                } else {    // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+                  i1=0; j1=1;
+                }
+                // A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+                // a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+                // c = (3-sqrt(3))/6
+                var x1 = x0 - i1 + G2; // Offsets for middle corner in (x,y) unskewed coords
+                var y1 = y0 - j1 + G2;
+                var x2 = x0 - 1 + 2 * G2; // Offsets for last corner in (x,y) unskewed coords
+                var y2 = y0 - 1 + 2 * G2;
+                // Work out the hashed gradient indices of the three simplex corners
+                i &= 255;
+                j &= 255;
+                var gi0 = gradP[i+perm[j]];
+                var gi1 = gradP[i+i1+perm[j+j1]];
+                var gi2 = gradP[i+1+perm[j+1]];
+                // Calculate the contribution from the three corners
+                var t0 = 0.5 - x0*x0-y0*y0;
+                if(t0<0) {
+                  n0 = 0;
+                } else {
+                  t0 *= t0;
+                  n0 = t0 * t0 * gi0.dot2(x0, y0);  // (x,y) of grad3 used for 2D gradient
+                }
+                var t1 = 0.5 - x1*x1-y1*y1;
+                if(t1<0) {
+                  n1 = 0;
+                } else {
+                  t1 *= t1;
+                  n1 = t1 * t1 * gi1.dot2(x1, y1);
+                }
+                var t2 = 0.5 - x2*x2-y2*y2;
+                if(t2<0) {
+                  n2 = 0;
+                } else {
+                  t2 *= t2;
+                  n2 = t2 * t2 * gi2.dot2(x2, y2);
+                }
+                // Add contributions from each corner to get the final noise value.
+                // The result is scaled to return values in the interval [-1,1].
+                return 70 * (n0 + n1 + n2);
+              };
+            
+              // 3D simplex noise
+              module.simplex3 = function(xin, yin, zin) {
+                var n0, n1, n2, n3; // Noise contributions from the four corners
+            
+                // Skew the input space to determine which simplex cell we're in
+                var s = (xin+yin+zin)*F3; // Hairy factor for 2D
+                var i = Math.floor(xin+s);
+                var j = Math.floor(yin+s);
+                var k = Math.floor(zin+s);
+            
+                var t = (i+j+k)*G3;
+                var x0 = xin-i+t; // The x,y distances from the cell origin, unskewed.
+                var y0 = yin-j+t;
+                var z0 = zin-k+t;
+            
+                // For the 3D case, the simplex shape is a slightly irregular tetrahedron.
+                // Determine which simplex we are in.
+                var i1, j1, k1; // Offsets for second corner of simplex in (i,j,k) coords
+                var i2, j2, k2; // Offsets for third corner of simplex in (i,j,k) coords
+                if(x0 >= y0) {
+                  if(y0 >= z0)      { i1=1; j1=0; k1=0; i2=1; j2=1; k2=0; }
+                  else if(x0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=0; k2=1; }
+                  else              { i1=0; j1=0; k1=1; i2=1; j2=0; k2=1; }
+                } else {
+                  if(y0 < z0)      { i1=0; j1=0; k1=1; i2=0; j2=1; k2=1; }
+                  else if(x0 < z0) { i1=0; j1=1; k1=0; i2=0; j2=1; k2=1; }
+                  else             { i1=0; j1=1; k1=0; i2=1; j2=1; k2=0; }
+                }
+                // A step of (1,0,0) in (i,j,k) means a step of (1-c,-c,-c) in (x,y,z),
+                // a step of (0,1,0) in (i,j,k) means a step of (-c,1-c,-c) in (x,y,z), and
+                // a step of (0,0,1) in (i,j,k) means a step of (-c,-c,1-c) in (x,y,z), where
+                // c = 1/6.
+                var x1 = x0 - i1 + G3; // Offsets for second corner
+                var y1 = y0 - j1 + G3;
+                var z1 = z0 - k1 + G3;
+            
+                var x2 = x0 - i2 + 2 * G3; // Offsets for third corner
+                var y2 = y0 - j2 + 2 * G3;
+                var z2 = z0 - k2 + 2 * G3;
+            
+                var x3 = x0 - 1 + 3 * G3; // Offsets for fourth corner
+                var y3 = y0 - 1 + 3 * G3;
+                var z3 = z0 - 1 + 3 * G3;
+            
+                // Work out the hashed gradient indices of the four simplex corners
+                i &= 255;
+                j &= 255;
+                k &= 255;
+                var gi0 = gradP[i+   perm[j+   perm[k   ]]];
+                var gi1 = gradP[i+i1+perm[j+j1+perm[k+k1]]];
+                var gi2 = gradP[i+i2+perm[j+j2+perm[k+k2]]];
+                var gi3 = gradP[i+ 1+perm[j+ 1+perm[k+ 1]]];
+            
+                // Calculate the contribution from the four corners
+                var t0 = 0.6 - x0*x0 - y0*y0 - z0*z0;
+                if(t0<0) {
+                  n0 = 0;
+                } else {
+                  t0 *= t0;
+                  n0 = t0 * t0 * gi0.dot3(x0, y0, z0);  // (x,y) of grad3 used for 2D gradient
+                }
+                var t1 = 0.6 - x1*x1 - y1*y1 - z1*z1;
+                if(t1<0) {
+                  n1 = 0;
+                } else {
+                  t1 *= t1;
+                  n1 = t1 * t1 * gi1.dot3(x1, y1, z1);
+                }
+                var t2 = 0.6 - x2*x2 - y2*y2 - z2*z2;
+                if(t2<0) {
+                  n2 = 0;
+                } else {
+                  t2 *= t2;
+                  n2 = t2 * t2 * gi2.dot3(x2, y2, z2);
+                }
+                var t3 = 0.6 - x3*x3 - y3*y3 - z3*z3;
+                if(t3<0) {
+                  n3 = 0;
+                } else {
+                  t3 *= t3;
+                  n3 = t3 * t3 * gi3.dot3(x3, y3, z3);
+                }
+                // Add contributions from each corner to get the final noise value.
+                // The result is scaled to return values in the interval [-1,1].
+                return 32 * (n0 + n1 + n2 + n3);
+            
+              };
+            
+              // ##### Perlin noise stuff
+            
+              function fade(t) {
+                return t*t*t*(t*(t*6-15)+10);
+              }
+            
+              function lerp(a, b, t) {
+                return (1-t)*a + t*b;
+              }
+            
+              // 2D Perlin Noise
+              module.perlin2 = function(x, y) {
+                // Find unit grid cell containing point
+                var X = Math.floor(x), Y = Math.floor(y);
+                // Get relative xy coordinates of point within that cell
+                x = x - X; y = y - Y;
+                // Wrap the integer cells at 255 (smaller integer period can be introduced here)
+                X = X & 255; Y = Y & 255;
+            
+                // Calculate noise contributions from each of the four corners
+                var n00 = gradP[X+perm[Y]].dot2(x, y);
+                var n01 = gradP[X+perm[Y+1]].dot2(x, y-1);
+                var n10 = gradP[X+1+perm[Y]].dot2(x-1, y);
+                var n11 = gradP[X+1+perm[Y+1]].dot2(x-1, y-1);
+            
+                // Compute the fade curve value for x
+                var u = fade(x);
+            
+                // Interpolate the four results
+                return lerp(
+                    lerp(n00, n10, u),
+                    lerp(n01, n11, u),
+                   fade(y));
+              };
+            
+              // 3D Perlin Noise
+              module.perlin3 = function(x, y, z) {
+                // Find unit grid cell containing point
+                var X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z);
+                // Get relative xyz coordinates of point within that cell
+                x = x - X; y = y - Y; z = z - Z;
+                // Wrap the integer cells at 255 (smaller integer period can be introduced here)
+                X = X & 255; Y = Y & 255; Z = Z & 255;
+            
+                // Calculate noise contributions from each of the eight corners
+                var n000 = gradP[X+  perm[Y+  perm[Z  ]]].dot3(x,   y,     z);
+                var n001 = gradP[X+  perm[Y+  perm[Z+1]]].dot3(x,   y,   z-1);
+                var n010 = gradP[X+  perm[Y+1+perm[Z  ]]].dot3(x,   y-1,   z);
+                var n011 = gradP[X+  perm[Y+1+perm[Z+1]]].dot3(x,   y-1, z-1);
+                var n100 = gradP[X+1+perm[Y+  perm[Z  ]]].dot3(x-1,   y,   z);
+                var n101 = gradP[X+1+perm[Y+  perm[Z+1]]].dot3(x-1,   y, z-1);
+                var n110 = gradP[X+1+perm[Y+1+perm[Z  ]]].dot3(x-1, y-1,   z);
+                var n111 = gradP[X+1+perm[Y+1+perm[Z+1]]].dot3(x-1, y-1, z-1);
+            
+                // Compute the fade curve value for x, y, z
+                var u = fade(x);
+                var v = fade(y);
+                var w = fade(z);
+            
+                // Interpolate
+                return lerp(
+                    lerp(
+                      lerp(n000, n100, u),
+                      lerp(n001, n101, u), w),
+                    lerp(
+                      lerp(n010, n110, u),
+                      lerp(n011, n111, u), w),
+                   v);
+              };
+            
+            })(this);
+        </script>
+    </body>
+</html>

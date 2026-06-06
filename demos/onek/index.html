@@ -1,0 +1,11 @@
+<div id="src">
+
+<canvas id=c></canvas><script>with(c){for(m in width=height=G=333,D=document,X=Y=r=0,C=36,g=getContext`webgl2`)g[m[0]+m[6]+m[7]]=g[m];with(Math)with(g){for(p=cPr(),v=cSh(V_S),f=cSh(V_S-1),sSo(v,(m=`#version 300 es
+`)+`${l="in vec4 "}p;${l}c;out vec4 v;uniform mat4 u;${d="void main(){"}gl_Position=u*p;v=c;}`),sSo(f,m+`precision highp float;${l}v;out vec4 o;${d}o=v;}`),ceS(v),ceS(f),aSh(p,f),aSh(p,v),log(p),ugr(p),bff(J=34962,cBu()),eVe(0),eVe(1),vAt(0,3,A=5126,0,O=16,0),vAt(1,3,A-5,1,O,12),(a=[],l=e=>random()*32-O,d="00"+0x35303f4cd.toString(2),i=-1);G*C>++i;)i%C?0:(x=l(),y=l(),z=l()),a.push(x-d[(i+12)%C],y-d[i%C],z-d[(i+24)%C],J*l());bDa(J,new Float32Array(a),J+82),D.onkeydown=b=>g[b.key]=1,D.onkeyup=b=>g[b.key]=0,onmousemove=b=>r+=b.movementX/G,onclick=requestPointerLock,enable(DTE),Q=e=>{o=cos(r),S=sin(r),I=g.w-g.s|0,B=g.d-g.a|0,Y+=(I*o-B*S)/9,X-=(I*S+B*o)/9,uniformMatrix4fv(gfo(p,"u"),0,[o,0,S,S,0,1,0,0,S,0,-o,-o,X*o+Y*S,0,(R=X*S-Y*o)-.2,R]),dra(4,0,G*C)},setInterval(Q,O)}}</script>
+
+</div>
+
+<pre id="ShowCode">asdf</pre>
+<script>
+    ShowCode.innerText=src.innerHTML;
+</script>

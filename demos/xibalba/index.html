@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel = "stylesheet" href = "./main.css"/>
+    </head>
+    <body>
+        <canvas id = "play-area"></canvas>
+        <canvas id = "texture-atlas"></canvas>
+        <pre id = "log"></pre>
+        <script id = "vertex-shader" type = "glsl">#version 300 es
+            precision highp float;
+            in vec4 a_pos;
+            in vec4 a_subTexCoords;
+            in vec2 a_texCoordRepeat;
+
+            uniform mat4 u_matrix;
+
+            out vec4 v_subTexCoords;
+            out vec2 v_texCoordRepeat;
+            out vec3 v_pixelLocation;
+
+            void main(){
+                gl_Position = u_matrix * a_pos;
+                v_subTexCoords.xy = a_subTexCoords.xy;
+                v_subTexCoords.zw = a_subTexCoords.zw - a_subTexCoords.xy;
+                v_pixelLocation = gl_Position.xyz;
+                v_texCoordRepeat = a_texCoordRepeat;
+            }
+        </script>
+        <script id = "fragment-shader" type = "glsl">#version 300 es
+            precision highp float;
+
+            //#define epsilon 0.001
+            in vec4 v_subTexCoords;
+            in vec2 v_texCoordRepeat;
+            in vec3 v_pixelLocation;
+
+            uniform sampler2D u_texture;
+
+            out vec4 o_FragColor;
+
+            void main(){
+                vec4 col = texture(u_texture, v_subTexCoords.xy + mod(v_texCoordRepeat,v_subTexCoords.zw));
+                float foggy = col==vec4(1,0,0,1)?0.:clamp(length(v_pixelLocation)*0.2,0.,1.);
+                o_FragColor = mix(
+                    col,
+                    vec4(0.2,0,0,1),
+                    foggy
+                );//thanks dat for fixing floating point errors. Removed code because it was working without it.
+            }
+        </script>
+        <script id = "teapot-vertex-shader" type = "glsl">#version 300 es
+            in vec4 a_pos;
+            in vec4 a_col;
+            in mat4 a_posMatrix;
+            uniform mat4 u_viewMatrix;
+
+            out vec4 v_col;
+            out vec3 v_pixelLocation;
+            void main(){
+                gl_Position = u_viewMatrix * a_posMatrix * a_pos;
+                v_col = a_col * mod(float(gl_VertexID),3.)/3.;
+                v_pixelLocation = gl_Position.xyz;
+                
+            }
+        </script>
+        <script id = "teapot-fragment-shader" type = "glsl">#version 300 es
+            precision highp float;
+            
+            in vec4 v_col;
+            in vec3 v_pixelLocation;
+
+            out vec4 o_FragColor;
+
+            void main(){
+                float foggy = clamp(length(v_pixelLocation)*0.2,0.,1.);
+                o_FragColor = mix(
+                    v_col,
+                    vec4(0.2,0,0,1),
+                    foggy
+                );
+            }
+        </script>
+        <script src = "../triangleTeapot.txt"></script>
+        <script src = "matrix.js"></script>
+        <script src = "main.js"></script>
+    </body>
+</html>

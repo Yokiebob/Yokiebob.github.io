@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<!--
+Gear came from https://www.svgrepo.com/svg/266961/settings-gear
+
+Made by the former wizard of oz and Yokiebob
+
+
+-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>asdf</title>
+        <style>
+            *{
+                margin:0;
+                font-family:monospace;
+                overflow:hidden;/* hides the log, I hadn't the heart to get rid of my best friend completely*/
+            }
+            #c{
+                image-rendering:pixelated;
+            }
+            
+            /*All below code is settings related*/
+            
+            /*The gear in the corner*/
+            #gear{
+                position:absolute;
+                top:0px;
+                padding:0;
+                margin:5px;
+                transition-duration:2s;
+            }
+            #gear:hover{
+                transform:rotate(360deg);
+            }
+            
+            /*The white half opaque div that drops down*/
+            #settings{
+                position:absolute;
+                top:-100vh;
+                width:100vw;
+                height:100vh;
+                background-color:rgba(255,255,255,0.5);
+                display:flex;
+                justify-content: center;
+                align-items: center;
+                transition-duration:1s;
+            }
+            /*The box in the middle with switches etc*/
+            #settings div{
+                padding:100px;
+                border-radius:10px;
+                border:2px solid black;
+                overflow:auto;
+                text-wrap:wrap;
+                width:20vw;
+                height:20vh;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id = "c" width = "500" height = "500">If you are using dillo you see this text but not the emoji 🤔. Very few people will see emojji then, but probably more than the people who used dillo to look at this</canvas>
+        
+        <div id="settings">
+            <div>
+                <h1>Settings</h1>
+                <br>
+                <p>FOV:90</p>
+                <input id="fov-slider" type="range" min="60" max="120" value="90" oninput="this.previousElementSibling.innerHTML = 'FOV:'+this.value"/><br><br>
+                <p>Bloom: <input id="bloom-switch" type="checkbox" checked/></p><br>
+                <p>Dev/cheat: <input id="level-switch" type="checkbox" oninput="this.parentElement.nextElementSibling.style.display='block';" unchecked/></p>
+                <p style="display:none;">
+                    <br><br>m to switch to level making mode (fly)
+                    <br><br>q to change planet radius size
+                    <br><br>f to change planet color ([r,b,g,a], 0-255, [255,255,0,0] is defined as kill, all zeros is normal green blocks)
+                    <br><br>h to place planet
+                    <br><br>g to place moving planet, starting position and ending position
+                    <br><br>o to change moving planet speed, scales with distance
+                    <br><br>e to place red box
+                    <br><br>r to remove last placed red box
+                    <br><br>p to remove last placed planet (moving and normal)
+                    <br><br>j to print all level data
+                    <br><br>Left and Right arrow keys to change levels
+                    <br><br>
+                    <br><br>first planet is light source, I suggest making it white and far away, but don't lose track of player starting point
+                </p>
+            </div>
+        </div>
+        <div id="gear">
+        <svg fill="#ffffff" height="6vh" width="6vh" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472.615 472.615" xml:space="preserve">
+        <g>
+            <g>
+                <path d="M472.615,274.117V198.4l-55.335-9.255c-4.332-16.64-10.929-32.492-19.692-47.458L430.178,96l-53.563-53.563 l-45.686,32.591c-14.966-8.763-30.917-15.36-47.557-19.692L274.215,0H198.4l-9.157,55.335 c-16.64,4.332-32.591,10.929-47.557,19.692L96,42.437L42.437,96l32.591,45.686c-8.763,14.966-15.36,30.818-19.692,47.458L0,198.4 v75.717l55.335,9.255c4.332,16.64,10.929,32.591,19.692,47.557l-32.591,45.686L96,430.178l45.686-32.689 c14.966,8.862,30.917,15.458,47.557,19.791l9.157,55.335h75.815l9.157-55.335c16.64-4.332,32.591-10.929,47.557-19.791 l45.686,32.689l53.563-53.563l-32.591-45.686c8.763-14.966,15.36-30.917,19.692-47.557L472.615,274.117z M236.308,334.769 c-54.252,0-98.462-44.209-98.462-98.462c0-54.351,44.209-98.462,98.462-98.462s98.462,44.111,98.462,98.462 C334.769,290.56,290.56,334.769,236.308,334.769z"/>
+            </g>
+        </g>
+        </svg>
+        </div>
+        
+        <!--My trusty log-->
+        <pre id = "log">Log:<br></pre>
+        
+        <script src="../glmatrix.js"></script><!--I programmed on and offline so I include more than one links-->
+        <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+        
+        <!--This is the vertex for the actual geometry you see-->
+        <script id="vertex-shader" type="glsl">#version 300 es
+        layout(location=0)in vec4 a_pos;//position (from model)
+        layout(location=5)in vec3 a_norm;//normals
+        layout(location=1)in mat4 a_mat;//matrix for positions, size, etc
+        layout(location=6)in vec4 a_col;//color for overrides
+        
+        uniform mat4 u_matrix;//how to position shapes
+        uniform vec3 u_light;//where the light is (sun)
+        uniform vec3 u_eye;//Where the player is (camera)
+        
+        out vec4 v_col;
+        out vec3 v_norm;
+        out vec3 v_relativeLightDir;
+        out vec3 v_relativeEyeDir;
+        
+        //random yay, used for coloring the non overrid spheres
+        float rand(float s){
+            return fract(sin(s)*573292.326721);
+        }
+        
+        void main(){
+            gl_Position = u_matrix*a_mat*a_pos;//draw the geometry on the screen
+            
+            
+            //fight to death coloring stuff VVV
+            
+            //this is a unique number for each triangle per draw call, divide by 100 because overflow is dumb
+            float arg = float(gl_VertexID/3+gl_InstanceID*200)/100.;
+            
+            //standard color, a nice random green centered
+            v_col = vec4(
+                rand(arg)/6.,
+                rand(arg+0.0033)/2.,
+                rand(arg+0.0066)/6.,
+                1.
+            );
+            
+            //if we are lucky, then make it green glowing
+            if(rand(arg+0.01)<0.1){
+                v_col = vec4(
+                    rand(arg)/8.,
+                    rand(arg+0.0033),
+                    rand(arg+0.0066)/8.,
+                    0.
+                );
+            }
+            
+            //if the person messed with color, then actually color it
+            if(length(a_col)>0.01){
+                v_col=a_col;
+            }
+            
+            //standard light calculations
+            v_norm=mat3(a_mat)*a_norm;
+            v_relativeLightDir=(a_mat*a_pos).xyz-u_light;
+            v_relativeEyeDir=(a_mat*a_pos).xyz-u_eye;
+        }
+        </script>
+        <!--This is the fragment shader for the geometry on the string-->
+        <script id="fragment-shader" type="glsl">#version 300 es
+        precision highp float;
+        
+        in vec4 v_col;
+        in vec3 v_norm;
+        in vec3 v_relativeLightDir;
+        in vec3 v_relativeEyeDir;
+        
+        out vec4 o_FragColor;
+        
+        void main(){
+            //normal light calculations, check out webgl fundamentals if you want an explanation
+            vec3 norm =normalize(v_norm);
+            vec3 relativeEyeDir=normalize(v_relativeEyeDir);
+            vec3 relativeLightDir = normalize(v_relativeLightDir);
+            vec3 halfVector = normalize(relativeEyeDir+relativeLightDir);
+            float light = dot(norm, relativeLightDir);
+            o_FragColor = v_col;
+            
+            o_FragColor=vec4(mix(o_FragColor,o_FragColor*light,o_FragColor.w).xyz,v_col.w);//don't make lights dark ever
+            
+            if(light>0. && v_col.a>0.99){//if the right side and not a light, then add specular
+                float spec = dot(halfVector,norm);
+                spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec*=spec;
+                o_FragColor.xyz+=spec;
+                o_FragColor.w-=spec;
+            }
+        }
+        </script>
+        
+        <!--This is the vertexShader for all of the post processing effects-->
+        <script id="post-vertex" type="glsl">#version 300 es
+            out vec2 v_pos;
+            void main(){
+                gl_Position = vec4[](
+                    vec4(-1,3,-1,1),
+                    vec4(-1,-1,-1,1),
+                    vec4(3,-1,-1,1)
+                )[gl_VertexID];
+                v_pos = gl_Position.xy;
+            }
+        </script>
+        
+        <!--Post processing: takes colors based on their alpha-->
+        <script id="post-fragment-snatch" type="glsl">#version 300 es
+            precision highp float;
+            
+            in vec2 v_pos;
+            
+            uniform sampler2D u_tex;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                vec4 c = texture(u_tex,v_pos/2.+0.5);
+                o_FragColor = vec4(c.xyz*(1.-c.w),1);
+            }
+        </script>
+        
+        <!--Post processing: resizes to different texture-->
+        <script id="post-fragment-resize" type="glsl">#version 300 es
+            precision highp float;
+            
+            in vec2 v_pos;
+            
+            uniform sampler2D u_tex;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                o_FragColor = texture(u_tex,v_pos/2.+.5);
+            }
+        </script>
+        
+        <!--Post processing: blurs x-->
+        <script id="post-fragment-blurx" type="glsl">#version 300 es
+            precision highp float;
+            
+            in vec2 v_pos;
+            
+            uniform sampler2D u_tex;
+            
+            out vec4 o_FragColor;
+            
+            float weights[] = float[](0.005580425903690534,0.00956216200973884,0.015481925760729355,0.02368503304589255,0.03423758636877816,0.04676408250571464,0.06035341190617799,0.07359890733787296,0.08480491793908214,0.09233170198090707,0.09498625723843636,0.09233170198090707,0.08480491793908214,0.07359890733787296,0.06035341190617799,0.04676408250571464,0.03423758636877816,0.02368503304589255,0.015481925760729355,0.00956216200973884,0.005580425903690534);
+            
+            void main(){
+                vec3 c = vec3(0);
+                float width=float(textureSize(u_tex,0).x);
+                for(int i = 0; i < 21; i++){
+                    c+=texture(u_tex,v_pos/2.+.5+vec2(float(i-10)/width,0)*2.).xyz*weights[i];
+                }
+                o_FragColor = vec4(c,1);
+            }
+        </script>
+        
+        <!--Post processing: blurs y-->
+        <script id="post-fragment-blury" type="glsl">#version 300 es
+            precision highp float;
+            
+            in vec2 v_pos;
+            
+            uniform sampler2D u_tex;
+            
+            out vec4 o_FragColor;
+            
+            float weights[] = float[](0.005580425903690534,0.00956216200973884,0.015481925760729355,0.02368503304589255,0.03423758636877816,0.04676408250571464,0.06035341190617799,0.07359890733787296,0.08480491793908214,0.09233170198090707,0.09498625723843636,0.09233170198090707,0.08480491793908214,0.07359890733787296,0.06035341190617799,0.04676408250571464,0.03423758636877816,0.02368503304589255,0.015481925760729355,0.00956216200973884,0.005580425903690534);
+            
+            void main(){
+                vec3 c = vec3(0);
+                float height=float(textureSize(u_tex,0).y);
+                for(int i = 0; i < 21; i++){
+                    c+=texture(u_tex,v_pos/2.+0.5+vec2(0,float(i-10)/height)*2.).xyz*weights[i];
+                }
+                o_FragColor = vec4(c,1);
+            }
+        </script>
+        
+        <!--Post processing: combines two textures-->
+        <script id="post-fragment-combine" type="glsl">#version 300 es
+            precision highp float;
+            
+            uniform sampler2D u_bloom;
+            uniform sampler2D u_normal;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                o_FragColor = texelFetch(u_bloom, ivec2(gl_FragCoord), 0)*1.5 + texelFetch(u_normal, ivec2(gl_FragCoord), 0);
+            }
+        </script>
+        
+        <!--Post processing: does death and collect effects on screen-->
+        <script id="post-fragment-effects" type="glsl">#version 300 es
+            precision highp float;
+            
+            in vec2 v_pos;
+            
+            uniform sampler2D u_tex;
+            
+            uniform float u_frame;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                vec4 col1 = texelFetch(u_tex,ivec2(gl_FragCoord.xy),0);
+                vec4 col2 = texelFetch(u_tex,ivec2(gl_FragCoord.xy)+ivec2(4+int(sin(u_frame*.031415*2.)*length(v_pos)*100.), 0),0);
+                vec4 col3 = texelFetch(u_tex,ivec2(gl_FragCoord.xy)-ivec2(4+int(sin(u_frame*.031415*2.)*length(v_pos)*100.), 0),0);
+                
+                if(u_frame > 100.){
+                    o_FragColor = vec4(sin(col1.xyz*(u_frame-100.)/2.),1);//grainy sin death
+                }else if(u_frame > 0.1){
+                    o_FragColor = vec4(col1.x, col2.y, col3.z,1);//woozy effect, awesome cubes!
+                }else{
+                    o_FragColor = vec4(col1.xyz,1);//no effect
+                }
+            }
+        </script>
+        <script type="module">
+            const log = (()=>{
+                const log = document.getElementById("log");
+                return (...a)=>{
+                    log.innerHTML+=a+"<br>";
+                };
+            })();
+            
+            {
+                const gear = document.getElementById("gear");
+                gear.onclick = ()=>{
+                    var settings = document.getElementById("settings");
+                    settings.style.top=settings.style.top=="0vh"?"-100vh":"0vh";
+                };
+            }
+            
+            
+            const clamp=(a,b,c)=>a<b?b:a>c?c:a;
+            
+            
+            try{
+            /*
+                container for webgl2 canvas
+            */
+            class GameCanvas{
+                /**
+                 * Create a Game Canvas
+                 * @param {HTMLCanvasElement} canvas - the canvas you want wrapped
+                **/
+                constructor(canvas){
+                    this.canvas = canvas;
+                    this.gl = canvas.getContext("webgl2",{preserveDrawingBuffer:true});
+                    this.gl.viewport(0,0,canvas.width,canvas.height);
+                }
+                /*
+                    Sets the canvas width and height, with an option to make more pixelated
+                    
+                    @param {number} width - new CSS width
+                    @param {number} height - new CSS height
+                    @param {diff} diff - the pixel size
+                */
+                setRes(width,height,diff=1){
+                    this.canvas.width=width/diff;
+                    this.canvas.height=height/diff;
+                    this.canvas.style.width=width+"px";
+                    this.canvas.style.height=height+"px";
+                    this.gl.viewport(0,0,canvas.width,canvas.height);
+                }
+                
+                /*
+                    returns the canvas width
+                */
+                get width(){
+                    return this.canvas.width;
+                }
+                /*
+                    returns the canvas height
+                */
+                get height(){
+                    return this.canvas.height;
+                }
+            }
+            
+            /*
+            Wrapper for common input for games
+            */
+            class GameInput{
+                /*
+                    construct the input based off of elements that allow key and mouse events, sets the event listeners
+                    
+                    @param {HTMLElement} keyboardElement - element that handles key events (usually document)
+                    @param {HTMLElement} mouseElement - element that handles mouse events
+                */
+                constructor({keyboardElement, mouseElement}){
+                    this.keys={};
+                    this.releasedKeys={};
+                    this.mouse={dx:0,dy:0,click:0};
+                    
+                    keyboardElement.onkeydown=e=>{
+                        this.keys[e.key.toString().toLowerCase()]=1;
+                        if(document.pointerLockElement){//if focused then do not do scrolling when space etc
+                            e.preventDefault();
+                        }
+                    };
+                    keyboardElement.onkeyup=e=>{
+                        this.releasedKeys[e.key.toString().toLowerCase()]=1;
+                        this.keys[e.key.toString().toLowerCase()]=0;
+                    };
+                    mouseElement.onclick=e=>{
+                        mouseElement.requestPointerLock();
+                        this.mouse.click=e.buttons;
+                    };
+                    mouseElement.onmousemove=e=>{
+                        this.mouse.dx = e.movementX;
+                        this.mouse.dy = e.movementY;
+                    };
+                }
+                /*
+                    resets the mouse and released keys each frame
+                */
+                resetMouseAndReleasedKeys(){
+                    this.mouse.dx=this.mouse.dy=this.mouse.click=0;
+                    for(var i in this.releasedKeys){
+                        this.releasedKeys[i] = false;
+                    }
+                }
+                /*
+                    returns object pointers to the objects that contain the key and mouse data
+                    
+                    @returns {object} keys - holds key data
+                    @returns {object} mouse - holds mouse data
+                */
+                exportPointers(){
+                    return {keys:this.keys,mouse:this.mouse,releasedKeys:this.releasedKeys};
+                }
+            }
+            
+            const canvas=new GameCanvas(document.getElementById("c"));
+            canvas.setRes(window.innerWidth,window.innerHeight);
+            const input=new GameInput({
+                keyboardElement:document,
+                mouseElement:canvas.canvas
+            });
+            const {keys,mouse,releasedKeys}=input.exportPointers();//because I can't handle typing input
+            const gl = canvas.gl;
+            
+            
+            /*
+            The supreme player object
+            values:
+                {Float32Array} p - the position
+                {Float32Array} v - the velocity
+                {Float32Array} rotMat - the matrix that holds the rotation data (except pitch [so yeah just yaw lol])
+                {Float32Array} straightUp - the vector pointing down hahah
+                {number} rad - the radius for collisions
+                {number} pitch - the pitch rotation
+                {bool} touchGrass - if the player is touching the ground
+                {bool} fly - if player flying (CHEATER!)
+                {bool} flyKey - if flying key was pressed
+            */
+            const player = {
+                p:vec3.fromValues(0,0,0.1),
+                v:vec3.create(),
+                rotMat:mat4.fromValues(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1),
+                straightUp:vec3.fromValues(0,0,0),//UM
+                rad:0.5,
+                touchGrass:false,
+                pitch:0,
+                fly:false,
+                flyKey:false,
+                
+                /*
+                    moves player, updates mouse rotation
+                */
+                update(){
+                    if(!document.getElementById("level-switch").checked){
+                        this.fly=0;
+                    }
+                    if(keys.m^this.flyKey && keys.m){
+                        this.fly^=1;
+                    }
+                    this.flyKey=keys.m;
+                    var ax = vec3.fromValues(this.rotMat[0],this.rotMat[4],this.rotMat[8]);
+                    var ay = vec3.fromValues(this.rotMat[1],this.rotMat[5],this.rotMat[9]);
+                    var az = vec3.fromValues(this.rotMat[2],this.rotMat[6],this.rotMat[10]);
+                    
+                    var axc = vec3.dot(ax,this.v);
+                    var ayc = vec3.dot(ay,this.v);
+                    var azc = vec3.dot(az,this.v);
+                    
+                    this.v.set([0,0,0]);
+                    vec3.scaleAndAdd(this.v,this.v,ax,.95*axc);
+                    vec3.scaleAndAdd(this.v,this.v,ay,.99*ayc);
+                    vec3.scaleAndAdd(this.v,this.v,az,.95*azc);
+                    vec3.add(this.p,this.p,this.v);
+                    
+                    
+                    var speed = 0.01;
+                    
+                    var move = vec3.create();
+                    
+                    if(keys.w){
+                        vec3.sub(move,move,az);
+                    }
+                    if(keys.s){
+                        vec3.add(move,move,az);
+                    }
+                    if(keys.a){
+                        vec3.sub(move,move,ax);
+                    }
+                    if(keys.d){
+                        vec3.add(move,move,ax);
+                    }
+                    if(!this.fly){
+                        vec3.scaleAndAdd(this.v,this.v,ay,-0.01);
+                        if(keys[" "] && this.touchGrass){
+                            vec3.scaleAndAdd(this.v,this.v,ay,0.2);
+                            this.touchGrass = false;
+                        }
+                    }else{
+                        vec3.scaleAndAdd(this.v,this.v,ay,-.04*ayc);
+                        if(keys[" "]){
+                            vec3.scaleAndAdd(this.v,this.v,ay,0.01);
+                        }
+                    }
+                    if(keys.shift){
+                        vec3.scaleAndAdd(this.v,this.v,ay,-0.01);
+                    }
+                    if(move[0]||move[1]||move[2])
+                        vec3.normalize(move,move);
+                    vec3.scaleAndAdd(this.v,this.v,move,speed);
+                    
+                    mat4.rotate(this.rotMat,this.rotMat,mouse.dx*0.003,[this.rotMat[1],this.rotMat[5],this.rotMat[9]]);
+                    this.pitch+=mouse.dy*0.003;
+                    this.pitch=clamp(this.pitch,-Math.PI*0.5,Math.PI*0.5);
+                    this.touchGrass = false;
+                },
+                /*
+                    returns the matrix representing the players position and orientation
+                    
+                    @returns {Float32Array} - the matrix holding the location etc
+                */
+                getMatrix(){
+                    const matrix = mat4.create();
+                    mat4.multiply(matrix,this.rotMat,matrix);
+                    mat4.rotate(matrix,matrix,this.pitch,[this.rotMat[0],this.rotMat[4],this.rotMat[8]]);
+                    mat4.translate(matrix,matrix,this.p.map(x=>-x));
+                    return matrix;
+                },
+                
+                /*
+                    Does collisions and finds the next "up", kinda optimized so hard to read nerd
+                    
+                    @param {InstancedShape} shape - the shape that holds the cute matrix data uwu (we get position and size from it yada yada boomer)
+                */
+                handlePlanets(shape){
+                    if(shape.cuteMatrixData.length)this.straightUp.set([0,0,0]);
+                    var storeRelVel = vec3.create();
+                    var d = vec3.create();
+                    var p = shape.cuteMatrixData;
+                    for(var i = 0; i < shape.NUM; i++){
+                        var pos = p[i].subarray(12,15);//from a matrix hahahahaha
+                        vec3.sub(d,pos,this.p);
+                        var di = d[0]*d[0]+d[1]*d[1]+d[2]*d[2];var disDUM=di;
+                        di=Math.sqrt(di);//HEHAHAHEHAHEhHAEHHAAAEHHHHHAHAAAAAAAAAAAAAA
+                        vec3.scale(d,d,1/di);
+                        var planetRad = Math.sqrt(p[i][0]**2+p[i][4]**2+p[i][8]**2);//if planet is ellipse then you should not be programming. Also don't know how to get rid of sqrt here :( (I could represent planets different but I'd rather have lag hahah.)
+                        vec3.scaleAndAdd(this.straightUp,this.straightUp,d,planetRad**3/disDUM);
+                        if(di<(this.rad+planetRad)){
+                            var far = this.rad+planetRad-di;
+                            vec3.scaleAndAdd(this.p,this.p,d,-far);
+                            var relativeVel = vec3.sub(storeRelVel,this.v,vec3.sub(storeRelVel,pos,shape.lastPos[i]));
+                            var alongNorm = vec3.dot(d,relativeVel);
+                            if(alongNorm<0){continue;}
+                            vec3.scaleAndAdd(this.v,this.v,d,-alongNorm);
+                            this.touchGrass = true;//go touch some non computer grass "judge"
+                        }
+                    }
+                    //vec3.normalize(this.straightUp,this.straightUp);//LIKE NORMALIZING GRAVITY WOULD EVER HAPPEN HAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAHAhahahhhaa
+                },
+                /*
+                    This awesome function rotates you to the right place, so straightUp remains down instead of falling sideways
+                */
+                backToReality(){
+                    var sorry=vec3.fromValues(-this.rotMat[1],-this.rotMat[5],-this.rotMat[9]);
+                    if (vec3.squaredLength(this.straightUp) == 0 || vec3.equals(sorry,vec3.normalize(this.straightUp,this.straightUp))) return;
+                    const about = vec3.cross(vec3.create(),this.straightUp,sorry);
+                    let ang = vec3.angle(this.straightUp,sorry);
+                    if (vec3.dot(this.straightUp,sorry) < -.99 && this.touchGrass) ang=Math.PI,vec3.set(about,this.rotMat[0],this.rotMat[4],this.rotMat[8]);
+                    mat4.rotate(this.rotMat,this.rotMat,ang,about);
+                }
+            };
+            
+            /*
+                Creates a webgl program given context and shader sources
+                
+                @param {Webgl2RenderingContext} gl - [out of context joke]
+                @param {String} vsh - the vertex source
+                @param {String} fsh - the fragment source
+                
+                @returns {Webgl2Program}
+            */
+            const createProgram = (gl,vsh,fsh)=>{
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader,vsh);
+                gl.compileShader(vertexShader);
+                
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader,fsh);
+                gl.compileShader(fragmentShader);
+                
+                const program = gl.createProgram();
+                gl.attachShader(program,vertexShader);
+                gl.attachShader(program,fragmentShader);
+                gl.linkProgram(program);
+                
+                if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
+                    log(gl.getShaderInfoLog(vertexShader));
+                    log(gl.getShaderInfoLog(fragmentShader));
+                }
+                
+                return program;
+            };
+            
+            const program = createProgram(
+                canvas.gl,
+                document.getElementById("vertex-shader").text,
+                document.getElementById("fragment-shader").text
+            );
+            
+            //whoever made uniforms for webgl was working for satan
+            const uniformMatrixLocation = gl.getUniformLocation(program,"u_matrix");
+            const uniformLightLocation = gl.getUniformLocation(program,"u_light");
+            const uniformEyeLocation = gl.getUniformLocation(program,"u_eye");
+            
+            gl.enable(gl.DEPTH_TEST);//At one point I thought these things got trapped in VAO's but I think they actually are related to framebuffers. Whatever
+            gl.clearColor(0,0,0,1);
+            gl.enable(gl.CULL_FACE);//"show me your other side, triangle" -> "where did you go, triangle, noo"
+            gl.cullFace(gl.BACK);//default value but one line of code never hurt anything lolololol
+            
+            //here I make the framebuffer for the geometry program, because it's not postprocessing we might as well do it by hand lol
+            const shapeFramebuffer = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER,shapeFramebuffer);
+            gl.viewport(0,0,canvas.width,canvas.height);
+            const shapeDepthTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, shapeDepthTexture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24,canvas.width, canvas.height, 0,gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shapeDepthTexture, 0);
+            const shapeTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D,shapeTexture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,canvas.width, canvas.height, 0,gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, shapeTexture,0);
+            
+            
+            /*
+                Creates a representation of a shape that will be instanced
+                w class fr fr fr
+            */
+            class InstancedShape{
+                static MAX_SHAPES = 2000;//who needs 2000 planets or planes or cubes or cones?
+                static dataRanges={};//the sections of the arrays that are reserved for special shapes
+                static lastData;//temporay used in below function
+                static addDataRange(name,ind){
+                    this.dataRanges[name]=[
+                        this.lastData?this.dataRanges[this.lastData][1]:0,
+                        ind
+                    ];
+                    this.lastData=name;
+                }
+                static vertexBuffer;//one vertex buffer per context when you instance
+                
+                //giant array full of points in space
+                static data = (()=>{
+                    var data = [];
+                    for(var i = s; i < Math.PI*2; i+=Math.PI/4){
+                        var c = Math.cos(i);
+                        var s = Math.sin(i);
+                        var o = i-Math.PI/4;
+                        var oc = Math.cos(o);
+                        var os = Math.sin(o);
+                        data.push(0,0,-1,c,s,-1,oc,os,-1,0,0,1,oc,os,-1,c,s,-1);
+                    }
+                    
+                    this.addDataRange("CONE",data.length);
+                    
+                    data.push( ...[0,0,0,0,0,1,0,1,0,0,1,1,0,1,0,0,0,1,1,0,1,1,0,0,1,1,0,1,1,0,1,1,1,1,0,1,0,0,0,0,1,0,1,0,0,1,1,0,1,0,0,0,1,0,0,0,1,1,0,1,0,1,1,1,1,1,0,1,1,1,0,1,0,0,0,1,0,0,0,0,1,1,0,1,0,0,1,1,0,0,1,1,0,0,1,0,0,1,1,0,1,1,1,1,1,1,1,0].map(x=>x*2-1));
+                    
+                    this.addDataRange("BOX", data.length);
+                    
+                    var SPHERE_S = 4;
+                    for(var i = -SPHERE_S; i < SPHERE_S; i++){
+                        for(var k = -SPHERE_S; k < SPHERE_S; k++){
+                            data.push(i,k,SPHERE_S,i+1,k,SPHERE_S,i,k+1,SPHERE_S,i+1,k+1,SPHERE_S,i,k+1,SPHERE_S,i+1,k,SPHERE_S,i,k,-SPHERE_S,i,k+1,-SPHERE_S,i+1,k,-SPHERE_S,i+1,k+1,-SPHERE_S,i+1,k,-SPHERE_S,i,k+1,-SPHERE_S,i,SPHERE_S,k,i,SPHERE_S,k+1,i+1,SPHERE_S,k,i+1,SPHERE_S,k+1,i+1,SPHERE_S,k,i,SPHERE_S,k+1,i,-SPHERE_S,k,i+1,-SPHERE_S,k,i,-SPHERE_S,k+1,i+1,-SPHERE_S,k+1,i,-SPHERE_S,k+1,i+1,-SPHERE_S,k,SPHERE_S,i,k,SPHERE_S,i+1,k,SPHERE_S,i,k+1,SPHERE_S,i+1,k+1,SPHERE_S,i,k+1,SPHERE_S,i+1,k,-SPHERE_S,i,k,-SPHERE_S,i,k+1,-SPHERE_S,i+1,k,-SPHERE_S,i+1,k+1,-SPHERE_S,i+1,k,-SPHERE_S,i,k+1,
+                            );
+                        }
+                    }
+                    
+                    this.addDataRange("SPHERE", data.length);
+                    
+                    for(var i = this.dataRanges["SPHERE"][0]; i < this.dataRanges["SPHERE"][1]; i+=3){//feels wrong doing it after I declare the variable but whateves babes.
+                        var l = Math.sqrt(data[i]*data[i]+data[i+1]*data[i+1]+data[i+2]*data[i+2]);
+                        data[i]/=l;data[i+1]/=l;data[i+2]/=l;
+                    }
+                    
+                    (/*addNormals*/()=>{
+                        var v1 = vec3.create(),v2 = vec3.create(),v3=vec3.create();
+                        var newData = [];
+                        for(var i = 0; i < data.length; i+=9){
+                            v1.set([data[i],data[i+1],data[i+2]]);
+                            v2.set([data[i+3],data[i+4],data[i+5]]);
+                            v3.set([data[i+6],data[i+7],data[i+8]]);
+                            vec3.sub(v1,v1,v2);
+                            vec3.sub(v2,v2,v3);
+                            vec3.cross(v3,v2,v1);
+                            vec3.normalize(v3,v3);
+                            newData.push(data[i],data[i+1],data[i+2],...v3,data[i+3],data[i+4],data[i+5],...v3,data[i+6],data[i+7],data[i+8],...v3);
+                        }
+                        data=newData;
+                    })();
+                    return data;
+                })();
+                
+                /*
+                    [out of context joke], also make the buffer and shoves the awesome data in wow
+                    
+                    @param {Webgl2RenderingContext} gl - which gl are you using sir
+                */
+                static getContext(gl){
+                    this.gl=gl;
+                    this.vertexBuffer = gl.createBuffer();
+                    
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.data), gl.STATIC_DRAW);
+                }
+                
+                /*
+                    There used to be a lot more parameters, gradually everything turned to a giant array for efficiency lol
+                    Creates a VAO, matrix/color buffers and data arrays
+                    
+                    *cute means cut up huge array into little sections, inside of an array
+                    
+                    @param {String} name - the name of the data range that holds the data you want to instance
+                */
+                constructor({name}){
+                    this.NUM = 0;
+                    this.name = name;
+                    this.dataRange = InstancedShape.dataRanges[name];
+                    
+                    const gl = InstancedShape.gl;
+                    
+                    this.VAO = gl.createVertexArray();
+                    gl.bindVertexArray(this.VAO);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, InstancedShape.vertexBuffer);
+                    gl.enableVertexAttribArray(0);
+                    gl.vertexAttribPointer(0,3,gl.FLOAT, false, 24,0);
+                    gl.enableVertexAttribArray(5);
+                    gl.vertexAttribPointer(5,3,gl.FLOAT, false, 24,12);
+                    
+                    this.matrixBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.matrixBuffer);
+                    [1,2,3,4].forEach(function(a,i){
+                        gl.enableVertexAttribArray(a);
+                        gl.vertexAttribPointer(a,4,gl.FLOAT,false,64,i*16);
+                        gl.vertexAttribDivisor(a,1);
+                    });
+                    this.colorBuffer = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+                    gl.enableVertexAttribArray(6);
+                    gl.vertexAttribPointer(6,4,gl.UNSIGNED_BYTE,true,0,0);
+                    gl.vertexAttribDivisor(6,1);
+                    
+                    this.matrixData = new Float32Array(InstancedShape.MAX_SHAPES*16);
+                    this.colorData  = new Uint8Array(InstancedShape.MAX_SHAPES*4);
+                    this.cuteMatrixData = (()=>{
+                        var arr=[];
+                        for(var i = 0; i < this.matrixData.length; i+=16){
+                            var mat = this.matrixData.subarray(i,i+16);
+                            arr.push(mat);
+                        }
+                        return arr;
+                    })();
+                    this.cuteColorData = (()=>{
+                        var arr=[];
+                        for(var i = 0; i < this.colorData.length; i+=4){
+                            arr.push(this.colorData.subarray(i,i+4));
+                        }
+                        return arr;
+                    })();
+                    this.lastPos = new Array(InstancedShape.MAX_SHAPES*3).fill(0).map(x=>vec3.create());
+                    
+                }
+                /*
+                    Some of these bleeping spheres move, so we store the last position so when they hit the player he can bounce around
+                */
+                updateLastPos(){
+                    for(var i = 0; i < this.NUM; i++){
+                        this.lastPos[i].set(this.cuteMatrixData[i].subarray(12,15));
+                    }
+                }
+                /*
+                    do your worst!
+                    just draws them really
+                */
+                draw(){
+                    var gl = InstancedShape.gl;
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.matrixBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, this.matrixData, gl.DYNAMIC_DRAW);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+                    gl.bufferData(gl.ARRAY_BUFFER, this.colorData, gl.DYNAMIC_DRAW);
+                    gl.bindVertexArray(this.VAO);
+                    gl.drawArraysInstanced(gl.TRIANGLES,this.dataRange[0]/3,this.dataRange[1]/3-this.dataRange[0]/3,this.NUM);
+                }
+            }
+            InstancedShape.getContext(gl);//[out of context joke]
+            
+            const Spheres = new InstancedShape({
+                name:"SPHERE"
+            });
+            const Boxes = new InstancedShape({
+                name:"BOX"
+            });//aaannd that's it.
+            
+            
+            //glue code yuh built when I was using a European outlet jk\
+            /*
+            This object stores everything about levels that you didn't know or ask or want to know or ask or feared.
+            values:
+                {object} shapes - stores the instanced shapes that are connected to the grand level maker
+                {object} movingFunctions - stores the moving functions that are defined, only linSin is created so far
+                {number} level - guess jimmy
+                {array} currentMoving - stuff that needs position to be updated.
+                {array} collections - the red woozy boxes
+                {array} death - the yellow circles
+                {array} levels - the data for the levels, structure determined by the handlers for each shape
+            */
+            const LevelHandler = {
+                shapes:{},
+                /*
+                    adds a new shape that is allowed.
+                */
+                addShapeHandler(Shape, func){
+                    this.shapes[Shape.name]={shape:Shape,func};
+                },
+                level:0,
+                levels:[{"SPHERE":[[100,10,10,7,255,255,255,0],[0,-0.4,0.1,2],[-2.42,-0.4,4.12,2],[1.26,-0.4,9.75,2],[6.15,-0.4,14.45,2]],"BOX":[[[0.12073180675506592,7.958902870086604e-10,-0.3813447713851929,0,-0.08173145055770875,0.39070503711700444,-0.02587575912475586,0,0.37248327732086184,0.08572971820831299,0.11792629957199097,0,8.352468490600586,2.3990023136138916,15.246954917907715,1]]]},{"SPHERE":[[42.42,0,41.01,3,255,255,255,0],[-0.07,0,0.07,2],[-0.6,1.39,-1.66,1],[-0.78,1.39,-2.48,1],[-1.02,1.39,-3.57,1],[-1.31,1.39,-4.88,1],[-1.63,1.39,-6.32,1],[-1.97,1.39,-7.85,1],[-2.28,1.39,-9.25,1],[-2.63,1.39,-10.86,1],[-2.95,1.39,-12.31,1],[-3.28,1.39,-13.77,1],[-3.56,1.39,-15.05,1],[-3.89,1.39,-16.53,1],[-4.21,1.39,-18.01,1],[-4.58,1.39,-19.67,1],[-4.91,1.39,-21.15,1],[-5.24,1.39,-22.63,1],[-5.57,1.39,-24.12,1],[-5.94,1.39,-25.78,1],[-6.02,1.39,-27.4,1],[-5.74,1.39,-28.96,1],[-5.22,1.39,-30.47,1],[-4.63,1.39,-31.79,1],[-3.93,1.39,-33.04,1],[-2.71,1.39,-34.22,1],[-1.39,1.39,-35,1],[0.22,1.39,-35.7,1],[1.76,1.39,-36.23,1],[3.35,1.39,-36.7,1],[5.11,1.39,-37.24,1],[6.47,1.39,-38.03,1],[7.67,1.39,-39.07,1],[8.78,1.39,-40.41,1],[9.33,1.39,-41.95,1],[9.43,1.39,-43.24,1],[8.95,1.39,-44.65,1],[7.91,1.39,-46.03,1],[6.77,1.39,-46.79,1],[5.27,1.39,-47.15,1],[3.72,1.39,-47.08,1],[2.36,1.39,-46.43,1],[0.97,1.39,-45.63,1],[-0.42,1.39,-45.14,1],[-2,1.39,-45.17,1],[-3.59,1.39,-45.6,1],[-5.34,1.39,-46.34,1],[-6.77,1.39,-47.07,1],[-7.91,1.39,-48.09,1],[-8.18,1.39,-49.34,1],[-7.93,1.39,-50.74,1],[-7.38,1.39,-52.21,1],[-6.63,1.39,-53.74,1],[-5.66,1.39,-55.42,1],[-4.58,1.39,-56.48,1],[-3.14,1.39,-57.35,1],[-1.91,1.19,-57.6,1],[-0.2,0.21,-57.38,1],[1.22,-0.99,-56.9,1],[2.68,-2.41,-56.44,1],[4.22,-3.71,-56.28,1],[5.8,-4.53,-56.32,1],[7.42,-5.05,-56.48,1],[8.87,-5.35,-56.69,1],[10.7,-6.06,-57,1],[12.36,-6.95,-57.32,1],[13.84,-7.79,-57.62,1],[15.5,-8.95,-57.97,1],[17.17,-10.28,-58.32,1],[18.84,-11.78,-58.68,1],[20.5,-13.38,-59.05,1],[21.99,-14.86,-59.37,1],[23.66,-16.56,-59.74,1],[25.14,-18.1,-60.07,1],[26.62,-19.66,-60.39,1],[27.92,-20.78,-60.68,1],[29.37,-23.17,-66.4,2],[34.06,-26.13,-71.96,2],[30.58,-22.97,-79.1,2]],"BOX":[[[-0.2605634689331055,-0.22924566268920898,0.19887957572937012,0,-0.1341102123260498,-0.1481686234474182,-0.3464977025985718,0,0.27225165367126464,-0.29239127635955814,0.01965790390968323,0,28.94501495361328,-22.398780822753906,-60.44011688232422,1]],[[0.32014563083648684,0.008706608414649963,0.2396474838256836,0,0.047332763671875,-0.39416668415069583,-0.04891191720962525,0,0.23508820533752442,0.06750509142875671,-0.316506838798523,0,31.59918212890625,-22.92206573486328,-82.02993774414062,1]]]},{"SPHERE":[[136.68,36.83,93.75,4,255,255,255,0],[23.69,-2.77,-19.71,3],[20.49,-1.98,-22.48,1],[19.01,-1.98,-26.41,1],[19.85,-1.98,-24.5,0.5,255,255,0,0],[18,-2.19,-28.16,1],[16.36,-4.04,-29.64,1],[15.43,-5.75,-31.31,1],[15.17,-6.26,-31.73,1],[14.85,-6.87,-32.23,1],[14.42,-7.7,-32.9,1],[13.95,-8.61,-33.65,1],[13.51,-9.46,-34.35,1],[12.99,-10.47,-35.18,1],[12.46,-11.5,-36.03,1],[11.91,-12.56,-36.9,1],[11.36,-13.63,-37.77,1],[10.81,-14.7,-38.65,1],[10.25,-15.78,-39.54,1],[9.76,-16.73,-40.32,1],[9.2,-17.82,-41.21,1],[8.67,-18.46,-42.25,1,255,255,0,0],[8.42,-18.98,-42.68,1,255,255,0,0],[8.1,-19.65,-43.23,1,255,255,0,0],[7.65,-20.57,-43.99,1,255,255,0,0],[7.14,-21.61,-44.84,1,255,255,0,0],[6.67,-22.6,-45.65,1,255,255,0,0],[6.11,-23.75,-46.6,1,255,255,0,0],[5.6,-24.81,-47.47,1,255,255,0,0],[5.01,-26.01,-48.46,1,255,255,0,0],[4.49,-27.09,-49.34,1,255,255,0,0],[3.9,-28.31,-50.35,1,255,255,0,0],[3.37,-29.4,-51.25,1,255,255,0,0],[2.9,-30.36,-52.03,1,255,255,0,0],[2.44,-31.32,-52.82,1,255,255,0,0],[1.91,-32.41,-53.72,1,255,255,0,0],[1.37,-33.51,-54.63,1,255,255,0,0],[0.87,-34.86,-55.54,1],[0.65,-35.45,-56.07,1],[0.37,-36.16,-56.73,1],[0.05,-37,-57.5,1],[-0.3,-37.92,-58.34,1],[-0.72,-39.02,-59.35,1],[-1.11,-40.03,-60.28,1],[-1.41,-40.8,-60.99,1],[-1.81,-41.85,-61.95,1],[-2.12,-42.64,-62.67,1],[-2.47,-43.57,-63.52,1],[-2.83,-44.5,-64.38,1],[-3.14,-45.3,-65.12,1],[-3.5,-46.24,-65.98,1],[-3.81,-47.05,-66.71,1],[-23.95,-52.48,-95.62,3],[-4.05,-48.05,-68.13,1],[-3.63,-48.64,-68.52,1],[-3.04,-49.47,-69.06,1],[-2.34,-50.45,-69.69,1],[-1.66,-51.4,-70.31,1],[-0.86,-52.52,-71.04,1],[-0.09,-53.46,-71.97,1],[0.66,-54.11,-73.13,1],[1.67,-54.35,-74.18,1],[3.16,-54.32,-75.34,1],[4.88,-54.1,-76.49,1],[6.54,-53.79,-77.51,1],[8.27,-53.41,-78.52,1],[10.05,-52.99,-79.54,1],[11.87,-52.54,-80.55,1],[13.7,-52.08,-81.56,1],[15.55,-51.72,-82.96,1],[16.8,-51.61,-84.35,1],[17.81,-51.62,-85.81,1],[18.63,-51.92,-86.98,1],[19.52,-52.49,-88.17,1],[20.22,-52.9,-89.35,1],[20.94,-53.29,-90.76,1],[21.54,-53.58,-92.07,1],[-0.77,-54.47,-72.58,1],[-1.51,-54.86,-72.8,1],[-2.39,-55.32,-73.06,1],[-3.57,-55.93,-73.41,1],[-5.03,-56.69,-73.85,1],[-6.43,-57.42,-74.26,1],[-7.87,-58.17,-74.69,1],[-9.52,-59.03,-75.18,1],[-11.18,-59.89,-75.68,1],[-13.03,-60.85,-76.23,1],[-15.22,-61.99,-76.88,1],[-17.08,-62.96,-77.43,1],[-18.78,-63.84,-77.94,1],[-20.47,-64.73,-78.44,1],[-22,-65.52,-78.9,1],[-23.53,-66.32,-79.35,1],[-25.22,-67.2,-79.86,1],[-26.92,-68.08,-80.37,1],[-28.45,-68.88,-80.82,1],[-29.98,-69.67,-81.28,1],[-31.85,-70.64,-81.83,1],[-28.12,-65.3,-86.34,1],[-30.34,-59.33,-92.95,1],[-27.18,-63.9,-86.95,1,255,255,0,0],[-27.16,-63.26,-87.27,1,255,255,0,0],[-27.14,-62.26,-87.76,1,255,255,0,0],[-27.11,-61.05,-88.34,1,255,255,0,0],[-27.08,-59.73,-88.99,1,255,255,0,0],[-27.06,-58.48,-89.6,1,255,255,0,0],[-27.02,-57.04,-90.3,1,255,255,0,0],[-26.99,-55.56,-91.03,1,255,255,0,0],[-26.96,-54.22,-91.68,1,255,255,0,0],[-27.8,-66.85,-86.06,1],[-27.8,-67.77,-85.9,1],[-27.81,-68.93,-85.7,1],[-27.81,-70.29,-85.46,1],[-27.81,-71.76,-85.2,1],[-28.47,-53.71,-91.82,1],[-29.04,-55.32,-91.92,1],[-29.26,-57.14,-91.63,1],[-29.57,-58.91,-91.99,1]],"BOX":[[[0.1536726713180542,-0.12659891843795776,0.3469253540039063,0,-0.043467774987220764,-0.3793512344360352,-0.11917775869369507,0,0.36673583984375,0.008085579425096513,-0.1594971299171448,0,22.725482940673828,-54.10661315917969,-93.2860107421875,1]],[[0.26096956729888915,-0.05123296976089478,0.2987806558609009,0,0.07438794374465943,-0.3713685989379883,-0.12865432500839233,0,0.29387288093566893,0.13950124979019166,-0.23276183605194092,0,-21.685749053955078,-52.2439079284668,-99.05473327636719,1]],[[0.3523298740386963,0.18387535810470582,-0.04531318247318268,0,0.15128509998321535,-0.3308579444885254,-0.16627082824707032,0,-0.11391311883926392,0.12931747436523439,-0.3609719038009644,0,-25.49799919128418,-51.963172912597656,-99.11360931396484,1]],[[0.23315110206604006,0.23272466659545898,-0.2268911361694336,0,0.19434856176376344,-0.32363553047180177,-0.13224536180496216,0,-0.2605167388916016,-0.03315689265727997,-0.30171434879302983,0,-31.276153564453125,-59.91447830200195,-93.98297882080078,1]]]},{"SPHERE":[[77.05,95.63,-82.18,10,255,255,255,0],[-0.01,-3.29,-0.24,4],[-36.29,-1.19,-8.83,2,255,0,255,0,"linSin",-3.97,-1.19,-1.73,0.001],[-38.18,-0.45,-8.44,2],[-39.95,-1.8,-8.87,2],[-40.5,-2.3,-9.09,2],[-41.2,-2.94,-9.37,2],[-42.03,-3.69,-9.7,2],[-42.95,-4.52,-10.06,2],[-43.91,-5.4,-10.44,2],[-44.92,-6.31,-10.84,2],[-45.95,-7.25,-11.25,2],[-46.87,-8.08,-11.61,2],[-47.93,-9.04,-12.03,2],[-48.99,-10,-12.45,2],[-50.06,-10.98,-12.87,2],[-51.27,-12.07,-13.35,2],[-52.24,-13.99,-14.65,2,255,255,0,0],[-52.71,-14.39,-14.77,2,255,255,0,0],[-53.4,-14.98,-14.95,2,255,255,0,0],[-54.24,-15.7,-15.16,2,255,255,0,0],[-55.29,-16.62,-15.44,2,255,255,0,0],[-56.3,-17.48,-15.7,2,255,255,0,0],[-57.35,-18.39,-15.97,2,255,255,0,0],[-58.43,-19.32,-16.25,2,255,255,0,0],[-59.52,-20.26,-16.53,2,255,255,0,0],[-60.63,-21.21,-16.81,2,255,255,0,0],[-61.74,-22.17,-17.1,2,255,255,0,0],[-62.86,-23.14,-17.39,2,255,255,0,0],[-63.98,-24.11,-17.68,2,255,255,0,0],[-65.25,-25.2,-18.01,2,255,255,0,0],[-66.52,-26.29,-18.34,2,255,255,0,0],[-67.79,-27.38,-18.66,2,255,255,0,0],[-69.06,-28.48,-18.99,2,255,255,0,0],[-70.33,-29.57,-19.32,2,255,255,0,0],[-71.6,-30.67,-19.65,2,255,255,0,0],[-73.01,-31.89,-20.01,2,255,255,0,0],[-74.28,-32.98,-20.34,2,255,255,0,0],[-75.55,-34.08,-20.67,2,255,255,0,0],[-76.82,-35.17,-21,2,255,255,0,0],[-77.95,-36.15,-21.29,2,255,255,0,0],[-79.22,-37.25,-21.62,2,255,255,0,0],[-80.27,-38.46,-21.71,2,255,255,0,0],[-81.26,-40.11,-21.5,2,255,255,0,0],[-81.92,-41.54,-21.17,2,255,255,0,0],[-82.49,-43.01,-20.75,2,255,255,0,0],[-83.02,-44.52,-20.28,2,255,255,0,0],[-83.56,-46.21,-19.71,2,255,255,0,0],[-84.03,-47.74,-19.17,2,255,255,0,0],[-84.59,-49.63,-18.5,2,255,255,0,0],[-85.04,-51.17,-17.95,2,255,255,0,0],[-85.53,-52.89,-17.32,2,255,255,0,0],[-85.97,-54.44,-16.75,2,255,255,0,0],[-86.46,-56.16,-16.12,2,255,255,0,0],[-86.9,-57.71,-15.56,2,255,255,0,0],[-87.3,-59.4,-14.88,2,255,255,0,0],[-87.31,-60.77,-14.09,2,255,255,0,0],[-86.99,-62.32,-12.95,2,255,255,0,0],[-86.57,-63.51,-11.94,2,255,255,0,0],[-86.01,-64.8,-10.76,2,255,255,0,0],[-85.44,-65.94,-9.67,2,255,255,0,0],[-84.78,-67.18,-8.44,2,255,255,0,0],[-84.09,-68.42,-7.2,2,255,255,0,0],[-83.38,-69.65,-5.95,2,255,255,0,0],[-82.74,-70.75,-4.82,2,255,255,0,0],[-82.02,-71.98,-3.56,2,255,255,0,0],[-81.37,-73.08,-2.43,2,255,255,0,0],[-80.81,-74.04,-1.44,2,255,255,0,0],[-79.58,-76.11,0.69,2,255,255,0,0],[-78.62,-77.72,2.35,2],[-78.3,-78.25,2.91,2],[-77.93,-78.89,3.56,2],[-77.42,-79.74,4.44,2],[-76.86,-80.68,5.41,2],[-76.27,-81.68,6.44,2],[-75.72,-82.6,7.39,2],[-75.09,-83.65,8.49,2],[-74.52,-84.61,9.47,2],[-73.95,-85.57,10.46,2],[-73.31,-86.65,11.59,2],[-72.8,-87.5,12.46,2],[-72.22,-88.48,13.47,2],[2.47,-3.74,3.61,2],[2.74,-3.7,4.28,2],[3.15,-3.65,5.29,2],[3.59,-3.59,6.37,2],[4.13,-3.53,7.71,2],[4.65,-3.46,8.98,2],[5.18,-3.39,10.3,2],[5.73,-3.33,11.64,2],[6.36,-3.25,13.18,2],[6.92,-3.18,14.56,2],[7.48,-3.11,15.95,2],[8.01,-3.28,17.46,2],[8.39,-3.8,18.9,2],[8.72,-4.62,20.44,2],[8.95,-5.5,21.79,2],[9.17,-6.57,23.27,2],[9.33,-7.47,24.45,2],[9.49,-8.51,25.77,2],[9.59,-9.55,27.1,2],[9.22,-10.45,28.61,2],[8.45,-11.23,30.28,2],[7.31,-12,32.24,2],[5.98,-12.71,34.27,2],[4.69,-13.32,36.13,2],[3.34,-13.92,38.02,2],[2.26,-14.37,39.5,2],[0.86,-14.95,41.4,2],[-0.71,-15.59,43.53,2],[-2.14,-16.16,45.44,2],[-3.58,-16.72,47.36,2],[-5.02,-17.29,49.28,2],[-6.44,-17.81,51.21,2],[-7.86,-18.03,53.45,2],[-9.06,-18.02,55.5,2],[-10.17,-17.79,57.61,2],[-11.21,-17.42,59.75,2],[-12.32,-16.88,62.15,2],[-13.27,-16.03,64.13,2],[-14.17,-14.88,65.98,2],[-15.18,-13.76,68.14,2],[-16.2,-12.82,70.41,2],[-17.24,-11.99,72.76,2],[-18.07,-11.36,74.66,2],[-18.88,-10.74,76.77,2],[-19.19,-10.3,78.71,2],[-19.13,-9.96,80.7,2],[-18.89,-9.77,82.23,2],[-18.49,-9.6,83.9,2],[-18.05,-9.48,85.36,2],[-17.45,-9.35,87.15,2],[-16.8,-9.23,88.94,2],[-16.19,-9.14,90.53,2],[-15.57,-9.05,92.12,2],[-15.01,-8.97,93.53,2],[-14.38,-8.89,95.12,2],[-13.74,-8.81,96.7,2],[-13.1,-8.72,98.29,2],[-11.44,-9.21,100.13,2,0,0,0,255],[-9.69,-9.69,101.62,2,0,0,0,255],[-9.47,-9.94,102.4,2,0,0,0,255],[-9.16,-10.27,103.47,2,0,0,0,255],[-8.8,-10.66,104.73,2,0,0,0,255],[-8.41,-11.08,106.11,2,0,0,0,255],[-8.02,-11.41,107.38,2,0,0,0,255],[-7.41,-11.4,108.94,2,0,0,0,255],[-6.78,-11.1,110.31,2,0,0,0,255],[-6.02,-10.57,111.81,2,0,0,0,255],[-5.22,-9.92,113.3,2,0,0,0,255],[-4.4,-9.19,114.79,2,0,0,0,255],[-3.56,-8.41,116.26,2,0,0,0,255],[-2.76,-7.36,117.42,2,0,0,0,255],[-1.99,-6.04,118.25,2,0,0,0,255],[-1.25,-4.56,118.88,2,0,0,0,255],[-0.59,-3.14,119.35,2,0,0,0,255],[0.2,-1.33,119.83,2,0,0,0,255],[0.99,0.49,120.3,2,0,0,0,255],[1.76,1.88,121.06,2,0,0,0,255],[2.64,3.17,122.23,2,0,0,0,255],[3.46,4.2,123.46,2,0,0,0,255],[4.3,5.15,124.78,2,0,0,0,255],[5.15,6.06,126.17,2,0,0,0,255],[6.08,7.03,127.74,2,0,0,0,255],[6.93,7.89,129.18,2,0,0,0,255],[7.78,8.75,130.63,2,0,0,0,255],[8.64,9.6,132.1,2,0,0,0,255],[9.32,10.28,133.27,2,0,0,0,255],[10.09,11.04,134.59,2,0,0,0,255],[13.34,12.21,137.36,2,0,0,0,255],[14.92,12.94,140.79,2],[15.24,13.09,141.49,2],[15.76,13.33,142.61,2],[16.32,13.59,143.82,2],[16.93,13.87,145.15,2],[17.58,14.17,146.55,2],[18.24,14.48,147.99,2],[18.93,14.88,149.41,2],[19.63,15.61,150.58,2],[20.26,16.46,151.49,2],[20.99,17.55,152.4,2],[21.64,18.61,153.15,2],[22.37,19.86,153.96,2],[23.02,21.01,154.65,2],[22.54,26.41,161.84,5],[62.62,33.14,175.77,4,255,0,255,0,"linSin",25.8,24.61,166.3,0.001],[67.04,35.62,177.97,4],[66.28,33.96,182.31,3],[65.89,33.5,182.83,3],[65.31,32.82,183.6,3],[64.64,32.02,184.5,3],[63.91,31.16,185.48,3],[63.14,30.25,186.52,3],[62.17,29.1,187.82,3],[61.27,28.03,189.04,3],[60.36,26.95,190.26,3],[59.35,25.76,191.62,3],[58.34,24.56,192.98,3],[57.51,23.57,194.1,3],[56.49,22.37,195.47,3],[55.57,21.27,196.71,3],[54.74,20.29,197.83,3],[53.81,19.19,199.08,3],[52.8,17.99,200.45,3],[51.78,16.78,201.82,3],[50.76,15.57,203.19,3],[49.74,14.37,204.56,3],[48.73,13.16,205.93,3],[47.71,11.96,207.3,3],[45.67,9.54,210.04,3],[44.66,8.34,211.41,3],[42.07,5.27,214.9,3],[39.39,2.09,218.51,3],[36.98,-0.76,221.75,3],[34.76,-3.4,224.74,3],[32.26,-6.36,228.11,3],[29.12,-10.09,232.34,3],[26.16,-13.59,236.33,3],[22.83,-17.54,240.81,3],[18.97,-16.45,239.83,3],[18.33,-16.52,239.51,3],[17.37,-16.81,239.36,3],[16.22,-17.27,239.38,3],[14.78,-17.9,239.52,3],[13.41,-18.55,239.72,3],[12.15,-19.28,240.12,3],[11.02,-20.2,240.93,3],[10.06,-21.18,241.98,3],[9.29,-22.11,243.04,3],[8.51,-23.16,244.3,3],[8.14,-24.13,245.68,3],[8.17,-24.9,247,3],[8.5,-25.78,248.69,3],[8.91,-26.47,250.1,3],[9.45,-27.2,251.69,3],[10.33,-27.71,253.1,3],[11.52,-27.97,254.3,3],[12.9,-28.09,255.39,3],[16.35,-27.66,256.79,3],[16.64,-27.23,256.26,3],[17.24,-26.83,255.75,3],[18.08,-26.4,255.19,3],[19.33,-25.84,254.45,3],[20.44,-25.38,253.84,3],[21.76,-24.86,253.14,3],[23.01,-24.28,252.37,3],[23.96,-23.52,251.41,3],[24.7,-22.65,250.34,3],[25.24,-21.81,249.32,3],[25.78,-20.82,248.13,3],[26.26,-19.81,246.91,3],[26.66,-18.89,245.8,3],[24.93,-18.84,243.15,3],[11.55,-30.64,258.47,3],[-39.68,-80.34,161.38,5,255,0,255,0,"linSin",9.62,-32.75,261.53,0.0002],[-41.71,-77.5,168.24,3],[-44.78,-78.94,165.87,3],[-44.76,-79.77,164.69,3],[-44.71,-80.78,163.25,3],[-44.62,-82.22,161.22,3],[-44.53,-83.64,159.21,3],[-44.43,-85.13,157.1,3],[-44.33,-86.5,155.16,3],[-44.24,-87.89,153.2,3],[-44.14,-89.3,151.21,3],[-44.1,-90.7,149.04,3],[-44.31,-91.49,147.01,3],[-44.69,-91.89,145.09,3],[-45.22,-92.05,143.03,3],[-45.82,-92.05,141.02,3],[-46.4,-91.97,139.21,3],[-46.99,-91.85,137.41,3],[-47.6,-91.69,135.61,3],[-48.28,-91.51,133.65,3],[-48.89,-91.48,131.64,3],[-49.19,-92.07,129.65,3],[-49.33,-93.06,127.57,3],[-49.36,-94.43,125.2,3],[-49.33,-95.8,123.02,3],[-49.47,-96.77,120.94,3],[-49.85,-97.31,118.78,3],[-50.31,-97.51,116.9,3],[-50.84,-97.56,115.06,3],[-51.41,-97.5,113.24,3],[-52.06,-97.38,111.25,3],[-52.73,-97.22,109.28,3],[-53.4,-97.03,107.31,3],[-54.02,-96.85,105.52,3],[-54.5,-97.15,103.43,3],[-54.71,-97.97,101.39,3],[-54.78,-99.09,99.27,3],[-54.8,-100.37,97.11,3],[-55.01,-101.3,94.86,3],[-55.39,-101.71,92.92,3],[-55.92,-101.88,90.86,3],[-56.46,-101.89,89.02,3],[-57.03,-101.82,87.21,3],[-57.69,-101.68,85.23,3],[-58.36,-101.51,83.25,3],[-58.98,-101.34,81.47,3],[-59.6,-101.16,79.68,3],[-60.17,-101.24,77.64,3],[-60.42,-101.93,75.63,3],[-60.54,-103.1,73.32,3],[-60.65,-104.15,71.22,3],[-60.96,-104.72,69.24,3],[-61.44,-105,67.15,3],[-61.96,-105.06,65.3,3],[-62.52,-105.02,63.48,3],[-63.17,-104.91,61.49,3],[-63.71,-104.78,59.88,3],[-64.38,-104.6,57.91,3],[-64.63,-104.28,56.17,3],[-64.46,-103.75,54.31,3],[-64.07,-103.18,52.66,3],[-63.7,-102.56,50.84,3],[-63.76,-102.15,49.13,3],[-64.04,-101.83,47.39,3],[-64.47,-101.56,45.63,3],[-64.92,-101.34,44.04,3],[-65.53,-101.09,42.09,3],[-66.11,-100.88,40.31,3],[-66.49,-100.59,38.56,3],[-66.42,-100.08,36.7,3],[-66.14,-99.54,35.04,3],[-66.14,-99.15,33.51,3],[-66.38,-98.81,31.77,3],[-66.6,-98.5,30.21,3],[-66.47,-97.97,28.36,3],[-66.09,-97.39,26.71,3],[-65.9,-96.88,25.03,3],[-66.06,-96.47,23.14,3],[-66.37,-96.19,21.57,3],[-67.38,-95.38,18.36,3],[-68.64,-91.8,17.95,3],[-29.13,-63.36,203.26,2,255,255,0,0],[-17.17,-63.36,197.18,2,255,255,0,0]],"BOX":[[[-0.17406338453292847,-0.31348130702972415,-0.17728852033615114,0,0.3380579471588135,-0.07432969212532044,-0.20047869682312014,0,0.1241716742515564,-0.2370741367340088,0.2972830533981323,0,-70.98833465576172,-89.70201873779297,15.300227165222168,1]],[[-0.09852758049964905,-0.38045616149902345,0.07446520924568177,0,0.3127794981002808,-0.1234063982963562,-0.2166555166244507,0,0.22904388904571535,0.0048624098300933845,0.32789521217346196,0,12.226487159729004,11.3237886428833,136.3948516845703,1]],[[-0.09574128985404969,-0.37981624603271485,0.08107320070266724,0,0.313770341873169,-0.12485356330871583,-0.2143817663192749,0,0.22887024879455567,0.012283754348754884,0.3278223991394043,0,12.354655265808105,12.506893157958984,135.7080841064453,1]],[[-0.32236220836639407,2.145518607221675e-9,-0.2368173360824585,0,-0.197437584400177,0.22087974548339845,0.26875741481781007,0,0.13077038526535034,0.33348467350006106,-0.1780082106590271,0,19.02302360534668,-22.91893196105957,250.22119140625,1]],[[0.2486437797546387,5.729369867424339e-10,-0.31333065032958984,0,-0.03806825876235962,0.3970367908477783,-0.030209097266197207,0,0.3110095024108887,0.0485981434583664,0.24680182933807374,0,11.704849243164062,-22.967985153198242,247.15725708007812,1]],[[0.29185616970062256,4.853605517496362e-10,0.2735320806503296,0,-0.05894615650177002,0.39060156345367436,0.06289499402046204,0,-0.2671051502227783,-0.0861998975276947,0.2849986791610718,0,18.429792404174805,-18.41487693786621,243.22979736328125,1]],[[0.07938792109489441,1.023825113577459e-9,0.39204251766204834,0,0.051131671667099005,0.3965833425521851,-0.010354074090719223,0,-0.38869380950927734,0.05216944217681885,0.07870981693267823,0,22.6191463470459,-19.055004119873047,246.6342315673828,1]],[[0.06522582769393921,4.198418945833282e-10,-0.39464583396911623,0,-0.08296110630035401,0.3910619497299195,-0.01371155232191086,0,0.3858274221420288,0.08408650159835816,0.06376835107803346,0,29.53077507019043,-19.76382064819336,250.03155517578125,1]],[[-0.018474823236465456,-5.372001510295376e-10,0.3995727300643921,0,0.18621233701705933,0.35390796661376955,0.008609797060489656,0,-0.3535299062728882,0.1864110827445984,-0.01634596735239029,0,5.856125831604004,-19.7823429107666,241.0645294189453,1]],[[0.3985893487930298,-2.617218664013876e-10,0.03356042802333832,0,0.007644373923540115,0.38948512077331543,-0.09079043269157411,0,-0.032678219676017764,0.09111161828041077,0.3881115436553955,0,-41.041473388671875,-73.8541030883789,171.7862548828125,1]]]},{"SPHERE":[[-47.28,-5.15,-0.37,10,255,255,255,0],[-0.75,-0.59,-0.43,5]],"BOX":[[[0.03916411101818085,0.2430335283279419,0.31527922153472904,0,-0.21156437397003175,-0.2556494951248169,0.22334802150726318,0,0.3372043609619141,-0.18862253427505493,0.10351238250732422,0,11.374725341796875,-17.593355178833008,-0.1901474893093109,1]]]},{"SPHERE":[[100,10,10,7,255,255,255,0],[0.25,-9.11,0.68,4],[-0.39,-9.3,6.46,2],[-4.33,-9.31,11.08,2],[2.55,-9.31,12.83,2],[-4.41,-9.31,16.81,2],[1.67,-9.31,18.73,2],[-3.16,-9.31,27.02,2],[3.05,-9.31,34.34,2],[1.25,-9.31,36.81,2],[-1.23,-9.31,39.7,2],[-0.01,-9.31,44.41,2],[-1.47,-9.31,47,1.5,255,255,0,0],[-2.41,-8.32,48.88,2.2],[-4.45,-7.92,52.83,2],[-10.1,-7.92,57.12,2],[-4.47,-7.92,63.1,2],[-4.62,-7.92,68.23,2],[3.66,-0.26,98.47,2,255,0,255,0,"linSin",-3.84,-6.93,70.66,0.001],[4.4,0,103.04,3.5]],"BOX":[[[0.3838645696640015,-2.379721308898297e-10,-0.11246315240859986,0,-0.00990680679678917,0.39844503402709963,-0.03381438255310059,0,0.11202596426010132,0.035235735774040225,0.3823723316192627,0,5.6817731857299805,0.7918693423271179,107.09249877929688,1]]]}],
+                movingFunctions:{
+                    linSin(moveData,t){
+                        var [shape,ind,[x,y,z,s,r,g,b,a,func,x1,y1,z1,speed]] = moveData;
+                        var ax=(x+x1)/2,
+                            ay=(y+y1)/2,
+                            az=(z+z1)/2;
+                        var s = Math.sin(t*speed);
+                        shape.cuteMatrixData[ind].subarray(12,15).set([ax+s*(ax-x),ay+s*(ay-y),az+s*(az-z)]);
+                    }
+                },
+                currentMoving:[],
+                collections:[],
+                death:[],
+                
+                /*
+                    new level, throw out old data and in with new data (to be drawn)
+                    relies on handlers
+                */
+                load(){
+                    this.currentMoving.length=0;
+                    this.death.length=0;
+                    this.collections.length=0;
+                    var level = this.levels[this.level];
+                    for(var shp in level){
+                        if(LevelHandler.shapes[shp]){
+                            const shape = LevelHandler.shapes[shp].shape;
+                            shape.matrixData.fill(0);
+                            shape.colorData.fill(0);//reset over next time yuh
+                            shape.NUM=level[shp].length;
+                            
+                            var hand = LevelHandler.shapes[shp].func;
+                            for(var i = 0; i < shape.NUM;i++){
+                                hand(level[shp][i], shape.cuteMatrixData[i], shape.cuteColorData[i],i);
+                            }
+                        }
+                    }
+                },
+                
+                /*
+                    Move around the stuff with the defined moving functions
+                */
+                updateMoving(){
+                    for(var i = 0; i < this.currentMoving.length; i++){
+                        var moveData = this.currentMoving[i];
+                        this.movingFunctions[moveData[2][8]](moveData,performance.now());
+                    }
+                },
+                
+                /*
+                    have the player walk around looking for red squares, when touching kill matrix and say we have touched, if none left then advance
+                    
+                    @param {Object} player - the player object that you want to touch red squares
+                    
+                    @returns {bool} true if you hit a red square
+                */
+                collectWalk(player){
+                    var levelFinished = true;
+                    var hitOne = false;
+                    for(var i = 0; i < this.collections.length; i++){
+                        var port = this.collections[i];//on, matrix
+                        mat4.rotateX(port[1],port[1],0.1+i/200);
+                        mat4.rotateY(port[1],port[1],0.111+i/200);
+                        mat4.rotateZ(port[1],port[1],0.11+i/200);
+                        if(port[0]){
+                            levelFinished=false;
+                            if(vec3.length(vec3.sub(vec3.create(),port[1].subarray(12,15),player.p))<1){
+                                port[0]=0;
+                                port[1].fill(0);
+                                hitOne = true;
+                            }
+                        }
+                    }
+                    if(levelFinished && this.collections.length){
+                        if(this.level<this.levels.length-1){
+                            this.level++;
+                            player.p.fill(0);
+                        }else{
+                            document.body.innerHTML = "YOU WiN11!".repeat(400);
+                        }
+                        this.load();
+                    }
+                    return hitOne;
+                },
+                
+                /*
+                    Handles when the player touches a yellow square, obviously deserving his miserable death.
+                    
+                    @param {Object} player - the nuub who could have touched the yellow sphere
+                    @returns {bool} true if you are a nuub and touched one
+                */
+                handleDeath(player){
+                    var hitOne = false;
+                    for(var i = 0; i < this.death.length; i++){
+                        var ded = this.death[i];
+                        var rad = player.rad+Math.sqrt(ded[0]**2+ded[4]**2+ded[8]**2);
+                        if(vec3.length(vec3.sub(vec3.create(),ded.subarray(12,15),player.p))<rad+0.1){
+                            player.p.fill(0);
+                            hitOne = true;
+                            for(var k = 0; k < this.collections.length; k++){
+                                this.collections[k][0]=1;//reset ships
+                                this.collections[k][1].set(this.levels[this.level].BOX[k][0]);
+                            }
+                            break;
+                        }
+                    }
+                    return hitOne
+                }
+            };
+            /*
+                The handler for the boxes
+                
+                It says set to glow red and add to collections, data is stored simply as a raw matrix
+            */
+            LevelHandler.addShapeHandler(Boxes,(data,matrix,color,ind)=>{
+                matrix.set(data[0]);//just a matrix end of story
+                color.set([255,0,0,0]);
+                LevelHandler.collections.push([1,matrix]);
+            });
+            /*
+                The handler for the Spheres
+                
+                It says determine how data is stored and if moving and or death sphere.
+            */
+            LevelHandler.addShapeHandler(Spheres,(data, matrix, color, ind)=>{
+                mat4.identity(matrix);
+                mat4.translate(matrix, matrix, data);
+                mat4.scale(matrix,matrix,[data[3],data[3],data[3]]);
+                if(typeof data[4] == "number"){//otherwise they are normal
+                    color.set([data[4],data[5],data[6],data[7]]);
+                    if(data[8]){
+                        LevelHandler.currentMoving.push([Spheres,ind,data]);
+                    }
+                    if(color[0]==255&&color[1]==255&&color[2]==0&&color[3]==0){
+                        //glowing yelow = ded
+                        LevelHandler.death.push(matrix);
+                    }
+                }
+            });
+            
+            LevelHandler.load();//I need this
+            
+            
+            /*
+                wraps a webgl2 post processing program
+            */
+            class PostProcessing{
+                static vsh = "#version 300 es\nout vec2 v_pos;void main(){gl_Position = vec4[](vec4(-1,3,-1,1),vec4(-1,-1,-1,1),vec4(3,-1,-1,1))[gl_VertexID];v_pos = gl_Position.xy;}";
+                static VAO;//need only one loser VAO for post processing
+                static gl;
+                /*
+                    [out of context joke]
+                    Sets the context and the VAO
+                */
+                static getContext(gl){
+                    this.gl=gl;
+                    this.VAO=this.gl.createVertexArray();
+                }
+                /*
+                    sets the darn VAO we have been talking about to the evil gl
+                */
+                static setVAO(){
+                    this.gl.bindVertexArray(this.VAO);
+                }
+                
+                /**
+                    Constructor for post processing program, takes in fragment shader, size of target, texture uniforms, and if it should render to canvas
+                    
+                    @param {String} fsh - the fragment source
+                    @param {number} width - the width of target
+                    @param {number} height - the height of target
+                    @param {Array<String>} texUniforms - the names of the tex uniform in the fragshader, in ascending order. MUST MATCH ORDER USED IN setTexture FUNCTION OKAY?!??!?
+                    @param {Bool} final - are we drawing on canvas?
+                **/
+                constructor({ fsh, width, height, texUniforms=[], final=false }){
+                    const gl = PostProcessing.gl;
+                    
+                    this.width=width|0;
+                    this.height=height|0;
+                    
+                    this.program = createProgram(gl,PostProcessing.vsh,fsh);
+                    gl.useProgram(this.program);
+                    for(var i = 0; i < texUniforms.length; i++){
+                        gl.uniform1i(gl.getUniformLocation(this.program,texUniforms[i]),i);
+                    }
+                    this.texData = [];
+                    if(!final){
+                        this.framebuffer = gl.createFramebuffer();
+                        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+                        this.colorAttachment = gl.createTexture();
+                        gl.bindTexture(gl.TEXTURE_2D, this.colorAttachment);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+                        gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.colorAttachment,0);
+                    }else{
+                        this.framebuffer = null;
+                    }
+                }
+                /*
+                    give use the array of texture to use in fragshader
+                    
+                    @param {Array<WebglTexture>} texData - array of textures yuck
+                */
+                setTexture(texData){
+                    this.texData = texData;
+                }
+                /*
+                    do the post processing stuff on their framebuffers
+                    
+                    *vomits*
+                */
+                run(){
+                    const gl = PostProcessing.gl;
+                    
+                    gl.useProgram(this.program);
+                    gl.viewport(0,0,this.width,this.height);
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+                    for(var i = 0; i < this.texData.length; i++){
+                        gl.activeTexture(gl.TEXTURE0+i);
+                        gl.bindTexture(gl.TEXTURE_2D,this.texData[i]);
+                    }
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLES,0,3);
+                }
+            }
+            PostProcessing.getContext(canvas.gl);
+            
+            
+            //all of the programs made one after the other 
+            //hehe
+            const snatchProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-snatch").text,
+                width:canvas.width,
+                height:canvas.height,
+            });
+            
+            const resizeDownProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-resize").text,
+                width:canvas.width/2,
+                height:canvas.height/2
+            });
+            
+            const blurXProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-blurx").text,
+                width:canvas.width/2,
+                height:canvas.height/2,
+            });
+            
+            const blurYProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-blury").text,
+                width:canvas.width/2,
+                height:canvas.height/2
+            });
+            
+            const resizeUpProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-resize").text,
+                width:canvas.width,
+                height:canvas.height
+            });
+            
+            const combineProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-combine").text,
+                width:canvas.width,
+                height:canvas.height,
+                texUniforms:["u_bloom","u_normal"]
+            });
+            
+            const goodBadProgram = new PostProcessing({
+                fsh:document.getElementById("post-fragment-effects").text,
+                width:canvas.width,
+                height:canvas.height,
+                final:true,
+                texUniforms:["u_tex"]
+            });
+            const uniformFrameCountLocation = gl.getUniformLocation(goodBadProgram.program, "u_frame");
+            
+            //used in level editor, go to settings to use them
+            var awesomeTimer=0;
+            var currentRad = 2;
+            var currentColor = [0,0,0,0];
+            var moving = [0,[0,0,0],0.001];
+            
+            const loop=()=>{
+                var isdev = document.getElementById("level-switch").checked;//are you CHEATING?!
+                try{
+                
+                //this chunk decreases awesome timer in increments, used for post processing effects
+                awesomeTimer=clamp(awesomeTimer-0.5,0,2000);
+                if(awesomeTimer%100<1){
+                    awesomeTimer=0;//skip to end haha
+                }
+                
+                player.update();
+                if(!player.fly){//if you are not CHEATING!??!!
+                    player.backToReality();
+                    player.handlePlanets(Spheres);//all spheres are planetoids for now
+                    //and no psychiatrists
+                    if(LevelHandler.collectWalk(player)){awesomeTimer=99;}//woozy yayyy
+                    if(LevelHandler.handleDeath(player)){awesomeTimer=199;}//arg start over but woozy yayyy
+                }
+                
+                const matrix = mat4.create();
+                mat4.perspective(matrix,document.getElementById("fov-slider").value/180*Math.PI,canvas.width/canvas.height,0.1,1000);
+                const worldMat = player.getMatrix();
+                mat4.multiply(matrix,matrix,worldMat);
+                
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER, shapeFramebuffer);
+                
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                
+                gl.useProgram(program);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                gl.uniformMatrix4fv(uniformMatrixLocation,false,matrix);
+                gl.uniform3fv(uniformLightLocation,Spheres.cuteMatrixData[0].subarray(12,15));//just make the first sphere a star
+                gl.uniform3fv(uniformEyeLocation,player.p);//I HATE UNIFORMS
+                
+                
+                LevelHandler.updateMoving();
+                
+                Spheres.updateLastPos();
+                Spheres.draw();
+                
+                Boxes.draw();//lots of fun drawing yaay
+                
+                
+                PostProcessing.setVAO();
+                
+                
+                if(document.getElementById("bloom-switch").checked){//if you are a loser with no bloom then you don't get no bloom HUUUH
+                    snatchProgram.setTexture([shapeTexture]);
+                    snatchProgram.run();
+                
+                    resizeDownProgram.setTexture([snatchProgram.colorAttachment]);
+                    resizeDownProgram.run();
+                
+                    blurXProgram.setTexture([resizeDownProgram.colorAttachment]);
+                    blurXProgram.run();
+                
+                    blurYProgram.setTexture([blurXProgram.colorAttachment]);
+                    blurYProgram.run();
+                
+                    resizeUpProgram.setTexture([blurYProgram.colorAttachment]);
+                    resizeUpProgram.run();
+                }else{
+                    gl.bindFramebuffer(gl.FRAMEBUFFER,resizeUpProgram.framebuffer);
+                    gl.clear(gl.COLOR_BUFFER_BIT);//no stain
+                }
+                
+                combineProgram.setTexture([resizeUpProgram.colorAttachment,shapeTexture]);
+                combineProgram.run();
+                
+                goodBadProgram.setTexture([combineProgram.colorAttachment]);
+                gl.useProgram(goodBadProgram.program);
+                gl.uniform1f(uniformFrameCountLocation, awesomeTimer);
+                goodBadProgram.run();//do the effects program haha
+                
+                
+                if(player.fly && isdev){//are you CHEATING!?!?!
+                    if(releasedKeys.g){
+                        moving[0]^=1;
+                        if(moving[0]){
+                            moving[1]=Array.from(player.p).map(x=>Math.round(x*100)/100);
+                        }else{
+                            LevelHandler.levels[LevelHandler.level].SPHERE.push([...Array.from(player.p).map(x=>Math.round(x*100)/100),currentRad,...((currentColor[0]+currentColor[1]+currentColor[2]+currentColor[3])?currentColor:[0,0,0,0]),"linSin",...moving[1],moving[2]]);
+                            LevelHandler.load();
+                            
+                        }
+                    }
+                    
+                    if(releasedKeys.o){
+                        moving[2]=Number(prompt("enter Speed"));
+                    }
+                    
+                    if(releasedKeys.h){
+                        LevelHandler.levels[LevelHandler.level].SPHERE.push([...Array.from(player.p).map(x=>Math.round(x*100)/100),currentRad,...currentColor[0]+currentColor[1]+currentColor[2]+currentColor[3]?currentColor:[]]);
+                        LevelHandler.load();
+                    }
+                    if(releasedKeys.j){
+                        log(JSON.stringify(LevelHandler.levels));
+                    }
+                    if(releasedKeys.q){
+                        currentRad = Number(prompt("Enter Radius size"));
+                    }
+                    if(releasedKeys.f){
+                        currentColor = JSON.parse(prompt("Enter color") ?? [0,0,0,0]);
+                    }
+                    if(releasedKeys.e){
+                        LevelHandler.levels[LevelHandler.level].BOX.push([mat4.scale(Array(16).fill(0),mat4.invert(mat4.create(),worldMat),[0.4,0.4,0.4])]);
+                        LevelHandler.load();
+                    }
+                    if(releasedKeys.r){
+                        LevelHandler.levels[LevelHandler.level].BOX.pop();
+                        LevelHandler.load();
+                    }
+                    if(releasedKeys.p){
+                        LevelHandler.levels[LevelHandler.level].SPHERE.pop();
+                        LevelHandler.load();
+                    }
+                    if(releasedKeys.arrowright){
+                        player.p.fill(0);
+                        LevelHandler.level++;
+                        if(LevelHandler.level>=LevelHandler.levels.length){
+                            LevelHandler.levels.push({SPHERE:[],BOX:[]});
+                        }
+                        LevelHandler.load();
+                    }
+                    if(releasedKeys.arrowleft){
+                        player.p.fill(0);
+                        LevelHandler.level--;
+                        if(LevelHandler.level<0)
+                            LevelHandler.level=0;
+                        else
+                            LevelHandler.load();
+                    }
+                }
+                
+                input.resetMouseAndReleasedKeys();
+                requestAnimationFrame(loop);
+                }catch(err){
+                    log(err.stack);
+                }
+            };
+            loop();
+            
+            log(gl.getError());
+            }catch(err){
+                log(err.stack);
+            }
+        </script>
+    </body>
+</html>

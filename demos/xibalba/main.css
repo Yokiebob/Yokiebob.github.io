@@ -1,0 +1,13 @@
+* {
+    margin:0;
+}
+#play-area{
+    border:2px solid black;
+    image-rendering:pixelated;
+}
+#texture-atlas{
+    border:2px solid #f0f0f0;
+    image-rendering:pixelated;
+    width:500px;
+    height:500px;
+}

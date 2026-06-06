@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<!--
+Judges:
+This program attempts to skin a goat mesh, which is the team avatar. First it loads in an obj file and converts it into buffer data with interleaved attributes. This program does not apply the texture to the goat mesh, but does pass in the texture coordinates. During the parsing process it computes mesh weights using a homemade algorithm. This means that the goat doesn't split apart or stretch triangles jaggedly, but it also means that when you move one leg another side might get twisted. This is due to weights usually being made in the 3d exporter (blender) by an artist. My resources for skinning was https://webgl2fundamentals.org/webgl/lessons/webgl-skinning.html, but they had nothing about generating matrix weights. This program does use textures to allow an arbitrary amount of bones instead of like 10 with uniform arrays. This program reuses a node tree es5 constructor from previous programs. The weight locations were created by me by flying around and clicking the print pos button, then adding it to the array. Keeping track of which bone is which was done by hand. 
+-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Somewhat correct skinning</title>
+        <style>
+            *{margin:0;}
+        </style>
+    </head>
+    <body>
+        <canvas id="output" width="400" height="400"></canvas>
+        <button id="boneAdder">Print pos</button>
+        <pre id="boneList"></pre>
+        <pre id="logger"></pre>
+        <script src="https://cdn.jsdelivr.net/gh/Yokiebob/Large-Files@main/goatObj.js"></script>
+        <script src="goatObj.js"></script>
+        <script id="vertex-shader" type="glsl">#version 300 es
+layout(location=0)in vec4 a_pos;
+layout(location=1)in vec2 a_texCoord;
+layout(location=2)in vec3 a_norm;
+layout(location=3)in vec4 a_boneWeights;
+layout(location=4)in vec4 a_boneIndex;
+uniform mat4 u_matrix;
+uniform sampler2D u_bones;
+mat4 getBone(int boneIndex){
+    return mat4(
+        texelFetch(u_bones, ivec2(0,boneIndex),0),
+        texelFetch(u_bones, ivec2(1,boneIndex),0),
+        texelFetch(u_bones, ivec2(2,boneIndex),0),
+        texelFetch(u_bones, ivec2(3,boneIndex),0)
+    );
+}
+out vec3 v_norm;
+out vec2 v_texCoord;
+void main(){
+    gl_Position = u_matrix * (
+        getBone(int(a_boneIndex[0]))*a_pos*a_boneWeights[0]+
+        getBone(int(a_boneIndex[1]))*a_pos*a_boneWeights[1]+
+        getBone(int(a_boneIndex[2]))*a_pos*a_boneWeights[2]+
+        getBone(int(a_boneIndex[3]))*a_pos*a_boneWeights[3]
+    );
+    v_norm=a_norm;
+    v_texCoord=a_texCoord;
+    gl_PointSize = 3.;
+}
+        </script>
+        <script id="fragment-shader" type="glsl">#version 300 es
+precision highp float;
+in vec3 v_norm;
+in vec2 v_texCoord;
+out vec4 o_FragColor;
+void main(){
+    o_FragColor = vec4((v_norm+1.)/2.,1);
+}
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+        <script src="../glmatrix.js"></script>
+        <script type="module">
+            const distsq = (a,b,c,d,e,f) => (a-d)*(a-d)+(b-e)*(b-e)+(c-f)*(c-f);
+            const normalize_array = (arr) => {//sorted arr
+                const s=arr[arr.length-1];
+                const d=arr[0]-s;
+                let sum=0;
+                arr.forEach((a)=>{
+                    sum+=a;
+                });
+                return arr.map((a)=>{
+                    return (a-s)/d/sum;
+                });
+            };
+            const clamp = (a,b,c)=>a<b?b:a>c?c:a;
+            const log = (()=>{
+                const logger=document.getElementById("logger");
+                return (...a)=>{
+                    logger.innerHTML+=a+"<br>";
+                };
+            })();
+            try{
+                const canvas = document.getElementById("output");
+                const gl = canvas.getContext("webgl2");
+                if(!gl){
+                    throw "Webgl2 not supported sorry";
+                }
+                const input = (function(){
+                    const keys = {};
+                    const mouse = {
+                        dx:0,
+                        dy:0,
+                        reset(){
+                            this.dx = this.dy = 0;
+                        }
+                    };
+                    canvas.onclick = function(){
+                        canvas.requestPointerLock();
+                    };
+                    canvas.onmousemove = function(e){
+                        mouse.dx = e.movementX;
+                        mouse.dy = e.movementY;
+                    };
+                    document.onkeydown = function(e){
+                        keys[e.key.toString().toLowerCase()] = true;
+                        e.preventDefault();
+                    };
+                    document.onkeyup = function(e){
+                        keys[e.key.toString().toLowerCase()] = false;
+                        e.preventDefault();
+                    };
+                    return {
+                        mouse,
+                        keys
+                    };
+                })();
+                const {mouse,keys} = input;
+                const createProgram = (vsh,fsh)=>{
+                    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                    gl.shaderSource(vertexShader,vsh);
+                    gl.compileShader(vertexShader);
+                    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                    gl.shaderSource(fragmentShader,fsh);
+                    gl.compileShader(fragmentShader);
+                    const program = gl.createProgram();
+                    gl.attachShader(program,vertexShader);
+                    gl.attachShader(program,fragmentShader);
+                    gl.linkProgram(program);
+                    if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
+                        log(gl.getShaderInfoLog(vertexShader));
+                        log(gl.getShaderInfoLog(fragmentShader));
+                    }
+                    return program;
+                };
+                const program = createProgram(
+                    document.getElementById("vertex-shader").text,
+                    document.getElementById("fragment-shader").text
+                );
+                gl.useProgram(program);
+                /*
+                    front shoulder,        0
+                        head               1
+                        back shoulder      2
+                            left knee      3
+                                left foot  4
+                            right knee     5
+                                right foot 6
+                        Left knee          7
+                            Left foot      8
+                        Right Knee         9
+                            right foot    10
+                */
+                const parentArray = ["none",0,0,2,3,2,5,0,7,0,9];
+                const bones = [
+                    [0,0.475,0.2],
+                    [0,0.6840187311172485,0.30830562114715576],
+                    [0,0.475,-0.3],
+                    [0.07826142758131027,0.2039995789527893,-0.31168270111083984],
+                    [0.07767615467309952,0.0400012768805027,-0.295693576335907],
+                    [-0.07946044206619263,0.22399947047233582,-0.3106200098991394],
+                    [-0.07509879022836685,0.04801158607006073,-0.2919417917728424],
+                    [0.07722592353820801,0.1839996874332428,0.10295964032411575],
+                    [0.08651021867990494,0.047999799251556396,0.13584305346012115],
+                    [-0.07854948937892914,0.19599942862987518,0.10274425894021988],
+                    [-0.07827933132648468,0.040003228932619095,0.13523568212985992]];
+                const relativeBones = Array(bones.length).fill(0).map(x=>vec3.create());
+                for(var i = 0; i < bones.length; i++){
+                    if(parentArray[i]!=="none"){
+                        vec3.sub(relativeBones[i],bones[parentArray[i]],bones[i]);
+                    }else{
+                        relativeBones[i].set(bones[i]);
+                    }
+                }
+                function Node(parent,view){
+                    this.setParent(parent);
+                    this.children = [];
+                    this.personalMatrix = mat4.create();
+                    this.heritableMatrix = view;
+                }
+                //it sets the parent no explanation needed unless super nOOB L
+                Node.prototype.setParent = function(parent){
+                    if(this.parent){
+                        for(var i = 0; i < this.parent.children.length;i++){
+                            var index = this.parent.children.indexOf(this);
+                            this.parent.children.splice(index,1);
+                        }
+                    }
+                    this.parent = parent;
+                    if(parent){
+                        this.parent.children.push(this);
+                    }
+                };
+                //updates a base and then all of it's children, their children, etc.
+                Node.updateTree = function(base){
+                    if(base.parent){
+                        mat4.multiply(base.heritableMatrix,base.parent.heritableMatrix,base.heritableMatrix);
+                    }
+                    base.children.forEach(function(a){
+                        Node.updateTree(a);
+                    });
+                    mat4.multiply(base.heritableMatrix,base.heritableMatrix,base.personalMatrix);
+                };
+                
+                const boneData = new Float32Array(bones.length*16);
+                const boneDataArr = (function(){
+                    var arr=[];
+                    for(var i = 0; i < bones.length; i++){
+                        var a=boneData.subarray(i*16,i*16+16);
+                        a.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+                        arr.push(a);
+                    }
+                    return arr;
+                })();
+                const boneNodes = [];
+                for(var i = 0; i < boneDataArr.length; i++){
+                    boneNodes.push(new Node(null,boneDataArr[i]));
+                }
+                for(var i = 0; i < parentArray.length; i++){
+                    var parent = parentArray[i];
+                    if(parent!="none"){
+                        boneNodes[i].setParent(boneNodes[parent]);
+                    }
+                }
+                const boneDataTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,boneDataTexture);
+                gl.texImage2D(
+                    gl.TEXTURE_2D,
+                    0,           // level
+                    gl.RGBA32F,  // internal format
+                    4,           // width 4 pixels, each pixel has RGBA so 4 pixels is 16 values
+                    bones.length,// one row per bone
+                    0,           // border
+                    gl.RGBA,     // format
+                    gl.FLOAT,    // type
+                    boneData);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                
+                const vertBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER,vertBuffer);
+                const goat = goatObj.split("\n");
+                const goatVertices = [];
+                const goatNorms = [];
+                const goatTexCoords = [];
+                const goatFinal = [];
+                var maxs = [0,0,0];
+                var mins = [0,0,0];
+                foo:for(var i = 0; i < goat.length; i++){
+                    var line = goat[i].split(" ");
+                    switch(line[0]){
+                        case "v":{
+                            goatVertices.push([line[1],line[2],line[3]]);
+                            maxs[0]=Math.max(line[1],maxs[0]);
+                            maxs[1]=Math.max(line[2],maxs[1]);
+                            maxs[2]=Math.max(line[3],maxs[2]);
+                            
+                            mins[0]=Math.min(line[1],mins[0]);
+                            mins[1]=Math.min(line[2],mins[1]);
+                            mins[2]=Math.min(line[3],mins[2]);
+                        }break;
+                        case "vn":{
+                            goatNorms.push([line[1],line[2],line[3]]);
+                        }break;
+                        case "vt":{
+                            goatTexCoords.push([line[1],line[2]]);
+                        }break;
+                        case "f":{
+                            const tri=[];
+                            for(var k = 1; k < line.length; k++){
+                                let v=line[k].split("/");
+                                let pos = goatVertices[v[0]-1];//dum obj starts index at 1 why
+                                let closests=[1e9,1e9,1e9,1e9];
+                                let closestInds=[0,0,0,0];
+                                for(let m = 0; m < bones.length; m++){
+                                    var d = (distsq(...bones[m], ...pos));
+                                    for(let j=0;j<closestInds.length;j++){
+                                        if(d<closests[j] && (closests[j-1]<d || !j)){
+                                            closests[Math.min(j+1,closestInds.length-1)]=closests[j];
+                                            closests[j]=d;
+                                            closestInds[Math.min(j+1,closestInds.length-1)]=closestInds[j];
+                                            closestInds[j]=m;
+                                        }
+                                    }
+                                }
+                                for(var a = 0; a < closests.length; a++){
+                                    closests[a]=1/closests[a];
+                                    if(!closests[a])closests[a]=1000;
+                                }
+                                closests=normalize_array(closests);//lol
+                                tri.push(
+                                    ...pos,
+                                    ...goatTexCoords[v[1]-1],
+                                    ...goatNorms[v[2]-1],
+                                    ...closests,
+                                    ...closestInds//weights and indices here
+                                );
+                            }
+                            goatFinal.push(...tri);
+                        }break;
+                    }
+                }
+                gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(goatFinal),gl.STATIC_DRAW);
+                const vao = gl.createVertexArray();
+                gl.bindVertexArray(vao);
+                gl.enableVertexAttribArray(0);
+                gl.vertexAttribPointer(0,3,gl.FLOAT,false,64,0);
+                gl.enableVertexAttribArray(1);
+                gl.vertexAttribPointer(1,2,gl.FLOAT,false,64,12);
+                gl.enableVertexAttribArray(2);
+                gl.vertexAttribPointer(2,3,gl.FLOAT,false,64,20);
+                gl.enableVertexAttribArray(3);
+                
+                gl.vertexAttribPointer(3,4,gl.FLOAT,false,64,32);
+                gl.enableVertexAttribArray(4);
+                gl.vertexAttribPointer(4,4,gl.FLOAT,false,64,48);
+                
+                const uniformMatrixLocation = gl.getUniformLocation(program,"u_matrix");
+                
+                const player = {
+                    pos:vec3.fromValues(0,0,1),
+                    vel:vec3.create(),
+                    r:{
+                        roll:0,
+                        pitch:0,
+                        yaw:0,
+                    },
+                    update(){
+                        vec3.add(this.pos,this.pos,this.vel);
+                        this.vel[0]*=0.95;
+                        this.vel[1]*=0.95;
+                        this.vel[2]*=0.95;
+                        const speed = 0.0005;
+                        if(keys.w){
+                            this.vel[0]-=Math.sin(this.r.yaw)*speed;
+                            this.vel[2]-=Math.cos(this.r.yaw)*speed;
+                        }
+                        if(keys.s){
+                            this.vel[0]+=Math.sin(this.r.yaw)*speed;
+                            this.vel[2]+=Math.cos(this.r.yaw)*speed;
+                        }
+                        if(keys.a){
+                            this.vel[0]-=Math.sin(this.r.yaw+Math.PI*0.5)*speed;
+                            this.vel[2]-=Math.cos(this.r.yaw+Math.PI*0.5)*speed;
+                        }
+                        if(keys.d){
+                            this.vel[0]+=Math.sin(this.r.yaw+Math.PI*0.5)*speed;
+                            this.vel[2]+=Math.cos(this.r.yaw+Math.PI*0.5)*speed;
+                        }
+                        if(keys.shift){
+                            this.vel[1]-=speed;
+                        }
+                        if(keys[" "]){
+                            this.vel[1]+=speed;
+                        }
+                        this.r.pitch-=mouse.dy*0.005;
+                        this.r.pitch=clamp(this.r.pitch,-Math.PI*0.5,Math.PI*0.5);
+                        this.r.yaw-=mouse.dx*0.005;
+                        this.r.yaw%=Math.PI*2;
+                    },
+                    toMatrix(){
+                        const matrix = mat4.create();
+                        mat4.rotateX(matrix,matrix,-this.r.pitch);
+                        mat4.rotateY(matrix,matrix,-this.r.yaw);
+                        mat4.translate(matrix,matrix,this.pos.map(a=>-a));
+                        return matrix;
+                    }
+                };
+                
+                gl.clearColor(0,0,0,1);
+                gl.enable(gl.DEPTH_TEST);
+                cancelAnimationFrame(window.parent.raf);
+                let frameCount = 0;
+                function loop(){
+                    frameCount++;
+                    gl.useProgram(program);
+                    gl.bindVertexArray(vao);
+                    player.update();
+                    const matrix = mat4.create();
+                    mat4.perspective(matrix,Math.PI/2,canvas.width/canvas.height,0.01,Infinity);
+                    mat4.multiply(matrix,matrix,player.toMatrix());
+                    gl.uniformMatrix4fv(uniformMatrixLocation,false,matrix);
+                    
+                    for(var i = 0; i < boneNodes.length; i++){
+                        boneNodes[i].heritableMatrix.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+                        mat4.translate(boneNodes[i].heritableMatrix, boneNodes[i].heritableMatrix, relativeBones[i]);
+                        mat4.rotateX(boneNodes[i].heritableMatrix, boneNodes[i].heritableMatrix, frameCount*0.02);
+                        mat4.translate(boneNodes[i].heritableMatrix, boneNodes[i].heritableMatrix, relativeBones[i].map(x=>-x));
+                    }
+                    /*
+                        front shoulder,        0
+                            head               1
+                            back shoulder      2
+                                left knee      3
+                                    left foot  4
+                                right knee     5
+                                    right foot 6
+                            Left knee          7
+                                Left foot      8
+                            Right Knee         9
+                                right foot    10
+                    */
+                    //document.getElementById("logger").innerHTML = boneNodes[2].heritableMatrix;
+                    Node.updateTree(boneNodes[0]);
+                    gl.bindTexture(gl.TEXTURE_2D,boneDataTexture);
+                    gl.texImage2D(
+                        gl.TEXTURE_2D,
+                        0,           // level
+                        gl.RGBA32F,  // internal format
+                        4,           // width 4 pixels, each pixel has RGBA so 4 pixels is 16 values
+                        bones.length,// one row per bone
+                        0,           // border
+                        gl.RGBA,     // format
+                        gl.FLOAT,    // type
+                        boneData);
+                    
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLES,0,goatFinal.length/16);
+                    mouse.reset();
+                    window.parent.raf=requestAnimationFrame(loop);
+                }
+                loop();
+                log(gl.getError());
+                document.getElementById("boneAdder").onclick = function(){
+                    bones.push([...player.pos]);
+                    document.getElementById("boneList").innerHTML = JSON.stringify(bones);
+                };
+            }catch(err){
+                log(err.stack);
+            }finally{
+                log("End");
+            }
+            //<script>
+        </script>
+    </body>
+</html>

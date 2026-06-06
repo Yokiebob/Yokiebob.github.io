@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<!--
+No real GAME :'( Get to sun and no closer is all you can do besides jam to music. Go here for better experience:https://www.khanacademy.org/computer-programming/new-webpage/5819756131041280?width=900&height=600&editor=no
+change width and height to your preference
+
+Made for team Vortex in Clash of Code
+
+Judges:
+This program features webgl, music!, resizing in a modern way, third person or first person view, and capsule collisions with blocks.
+
+Webgl: This program has two (really five, but the other three are for bloom so ignore ok draw calls, one is to draw the normal blocks, the other is to draw blocks that are transformed by a matrix. For this program that just means blocks that are rotated. Therefore there are two vertex shaders and only on fragment shader, as blocks are rendered the same way. For compression the lines drawn on the non rotated blocks are created in the fragment shader instead of being stored in textures. Otherwise I would have had to create another buffer for texture coordinates that would have turned in to a real pain if I wanted the textures to be scalable like in the program. Since the textures are only there to make it clear how close to the ground you are I didn't make real textures. The little man I made is modeled off my own body posture, and was made by hand as seen in the player.updateupdateNodes function.
+
+Music: HUGE thanks to phoboslab for his synthethizer (phoboslab.org/synth). I used it to compose my own music, then put it here on KA. This was one of the hardest parts. The last few scripts shouldn't be judged as they are either phoboslab's code or based off his. So only judge how you like the music really, as well as the originality of the idea. The music is generated and played in a KA-legal way. You should definitely check out phoboslab's blog post about it, it was very fascinating and informative. Something super cool about the library is that it uses webassembly to generated the music directly to an audiobuffer. (However keep in mind that I didn't write the library, so don't judge it).
+
+Resizing: If you put this code in a file or change the screen height then you will be pleased to note that it resizes to fit the screen, even if it's in an iframe. (KA blocks window.onresize) To do this I used the newish ResizeObserver method, and then observed the body element (Window and Document aren't elements so you can't observe them). I also set the body's width and height to 100vh/vw, so if the window or document change size the body matches that using css, and then js will note the difference and fix the canvas's size. 
+
+3rd or 1st person view: This is my first project with third person view, so it is a little wonky. By scrolling you can find a preference that you like best. I like to switch the view depending on the jump.
+
+Capsule collisions with blocks: If you have played my other games you will have noticed that you now have a height, instead of being low to the ground. Since the player isn't quite a sphere shape, but rather a cylinder shape, I started making cylinder collisions. However, after I played them for a bit it became clear that the sphere collisions had a natural sliding on and off of blocks that cylinders just didn't have. With the added height it was very frustrating to play. Finally I decided to just have capsule collisions, where there are sphere to sphere collisions but the collision occurs at the closest point on a vertical line to the closest point found on the box shape. Then a simple sphere to point collision occurs. If the capsule is inside of a box it just goes to the top, but that shouldn't occur in the game.
+
+Not very good comments jsyk :)
+-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>The son [MUSIC][COC][GAME]</title>
+        <style>
+            *{
+                margin:0;
+                color:red;
+            }
+            body{
+                width:100vw;
+                height:100vh;
+            }
+            #myCanvas{
+                image-rendering:pixelated;
+            }
+            #log{
+                position:absolute;
+                top:0;
+                color:red;
+                background-color:black;
+                opacity:0.7;
+                height:100%;
+                width:20%;
+            }
+            #log:hover{
+                opacity:1;
+                transition-duration:0.5s;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id="myCanvas" width="400" height="400"></canvas>
+        <div id = "log">
+            <pre id = "const-log"></pre>
+            <pre id = "main-log"></pre>
+        </div>
+        <script id="main-vertex-shader" type="glsl">#version 300 es
+            layout(location=0)in vec3 a_model_pos;//vertex
+            layout(location=4)in vec4 a_model_col;//vertex
+            
+            layout(location=1)in vec3 a_pos;//instance
+            layout(location=2)in vec3 a_size;
+            layout(location=3)in vec4 a_col;
+            
+            uniform mat4 u_matrix;
+            
+            out vec4 v_col;
+            out vec3 v_tex;
+            void main(){
+                gl_Position = u_matrix * vec4(a_model_pos*a_size+a_pos,1);
+                v_col = vec4(a_model_col.xyz+a_col.xyz,a_col.a);
+                v_tex=(a_model_pos*a_size);
+            }
+        </script>
+        <script id="transformed-vertex-shader" type="glsl">#version 300 es
+            layout(location=0)in vec3 a_model_pos;//vertex
+            layout(location=1)in vec4 a_model_col;//vertex
+            
+            layout(location=2)in vec4 a_col;
+            
+            layout(location=3)in mat4 a_matrix;
+            
+            uniform mat4 u_matrix;
+            
+            out vec4 v_col;
+            
+            out vec3 v_tex;//have to match varyings
+            void main(){
+                gl_Position = u_matrix * a_matrix * vec4(a_model_pos,1);
+                v_col = vec4(a_model_col.xyz+a_col.xyz,a_col.a);
+            }
+        </script>
+        <script id="main-fragment-shader" type="glsl">#version 300 es
+            precision highp float;
+            in vec4 v_col;
+            in vec3 v_tex;
+            out vec4 o_FragColor;
+            void main(){
+                float t = float(int(sin(v_tex.x*5.)<0.)+int(sin(v_tex.y*5.)<0.)+int(sin(v_tex.z*5.)<0.));
+                //so this adds up all of the axis's and if they work out then amazing else ragequit
+                o_FragColor = vec4(v_col.xyz*step(t,1.),v_col.a);
+            }
+        </script>
+        
+        <script id = "post-vertex-shader" type = "glsl">#version 300 es
+            precision highp float;
+            void main(){
+                gl_Position = vec4[](
+                    vec4(1,1,0,1),
+                    vec4(-3,1,0,1),
+                    vec4(1,-3,0,1)
+                )[gl_VertexID];//HURJD
+            }
+        </script>
+        <script id = "bloom-fragment-shader" type = "glsl">#version 300 es
+            precision highp float;
+            uniform sampler2D u_texture;
+            
+            out vec4 o_FragColor;
+            
+            void main(){
+                vec4 col = texelFetch(u_texture,ivec2(gl_FragCoord.xy),0);
+                if(col.a<0.1){
+                    o_FragColor = vec4(col.rgb,1);
+                }else{
+                    o_FragColor = vec4(0,0,0,0);
+                }
+            }
+        </script>
+        <script id = "blurx-fragment-shader" type = "glsl">#version 300 es
+        
+            precision highp float;
+            uniform sampler2D u_texture;
+            uniform sampler2D u_normal;//u_nique more like hahahadsgvusjdnkc
+            out vec4 o_FragColor;
+            const float color_ratios[] = float[](
+                0.027743733063505603,
+0.06655375580846169,
+0.12433878524108985,
+0.18091186502984205,
+0.205,
+0.18091186502984205,
+0.12433878524108985,
+0.06655375580846169,
+0.027743733063505603
+            );
+            int blurLength = 10;
+            void main(){
+                vec4 o = vec4(0);
+                for(int i = -4; i <= 4; i++){
+                    o += texelFetch(u_texture,ivec2(gl_FragCoord.xy)+ivec2(i,0),0)*color_ratios[i+4];
+                }
+                o_FragColor = o;
+            }
+        </script>
+        <script id = "blury-combine-fragment-shader" type = "glsl">#version 300 es
+        
+            precision highp float;
+            uniform sampler2D u_normal;
+            uniform sampler2D u_texture;
+            out vec4 o_FragColor;
+            const float color_ratios[] = float[](
+                0.027743733063505603,
+0.06655375580846169,
+0.12433878524108985,
+0.18091186502984205,
+0.205,
+0.18091186502984205,
+0.12433878524108985,
+0.06655375580846169,
+0.027743733063505603
+            );
+            int blurLength = 10;
+            void main(){
+                vec4 o = vec4(0);
+                for(int i = -4; i <= 4; i++){
+                    o += texelFetch(u_texture,ivec2(gl_FragCoord.xy)+ivec2(0,i),0)*color_ratios[i+4];
+                }
+                vec4 other = texelFetch(u_normal,ivec2(gl_FragCoord.xy),0);
+                o_FragColor = other + o;
+            }
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+        <script src="../glmatrix.js"></script>
+        <script type="module">
+        const log = (function(){
+            const logger = document.getElementById("main-log");
+            return function(...a){
+                logger.innerHTML += a + "<br>";
+            };
+        })();
+        const setConstLog = (function(){
+            const logger = document.getElementById("const-log");
+            return function(...a){
+                logger.innerHTML = a;
+            };
+        })();
+        try{
+            //<script>
+            const output_canvas = document.getElementById("myCanvas");
+            const ctx = output_canvas.getContext("2d");
+            const canvas = new OffscreenCanvas(400,400);
+            const gl = canvas.getContext("webgl2",{preserveDrawingBuffer:true});
+            
+            const clamp = (i,j,k) => i<j?j:i>k?k:i;//ijjikki
+            const distsq = (a,b,c,d) => a*a-a*c+c*c+b*b-b*d+d*d;//aaabbbcccddd
+            const lerp = (a,b,c) => a+(b-a)*c;//utilities, shouldn't have to explain to a JUDGE!
+            
+            //this is keys and mouse movement.
+            const input = (function(){
+                const keys = {};
+                const mouse = {
+                    dx:0,
+                    dy:0,
+                    dscroll:0,
+                    clicked:false,
+                    reset(){
+                        this.dx = this.dy = this.dscroll = 0;
+                        this.clicked = false;
+                    }
+                };
+                output_canvas.onclick = function(){
+                    mouse.clicked = true;
+                    output_canvas.requestPointerLock();
+                };
+                output_canvas.onmousemove = function(e){
+                    mouse.dx = e.movementX;
+                    mouse.dy = e.movementY;
+                    mouse.x = e.x;
+                    mouse.y = e.y;
+                };
+                output_canvas.onwheel = function(e){
+                    if(document.pointerLockElement){
+                        e.preventDefault();
+                    }
+                    mouse.dscroll = e.wheelDelta;
+                };
+                document.onkeydown = function(e){
+                    keys[e.key.toString().toLowerCase()] = true;
+                    if(document.pointerLockElement){
+                        e.preventDefault();
+                    }
+                };
+                document.onkeyup = function(e){
+                    keys[e.key.toString().toLowerCase()] = false;
+                    if(document.pointerLockElement){
+                        e.preventDefault();
+                    }
+                };
+                return {
+                    mouse,
+                    keys
+                };
+            })();
+            const {mouse,keys} = input;
+            
+            function createProgram(vsh,fsh){//have you made one of these too haha
+                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader,vsh);
+                gl.compileShader(vertexShader);
+                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader,fsh);
+                gl.compileShader(fragmentShader);
+                const program = gl.createProgram();
+                gl.attachShader(program,vertexShader);
+                gl.attachShader(program,fragmentShader);
+                gl.linkProgram(program);
+                if(!gl.getProgramParameter(program, gl.LINK_STATUS)){
+                    log(gl.getProgramInfoLog(program));
+                    if(!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)){
+                        log(gl.getShaderInfoLog(vertexShader));
+                    }
+                    if(!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)){
+                        log(gl.getShaderInfoLog(fragmentShader));
+                    }
+                }
+                return program;
+            }
+            
+            const bluryProgram = createProgram(//blurs the y and combines the two textures
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("blury-combine-fragment-shader").text
+            );
+            const bleep0 = gl.getUniformLocation(bluryProgram,"u_texture");
+            const bleep1 = gl.getUniformLocation(bluryProgram,"u_normal");//have to have uniforms for textures because we use more than one, so activeTexture and bleep0 come into use instead of just gl.texture
+            
+            const blurxProgram = createProgram(//blurs the x
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("blurx-fragment-shader").text
+            );
+            const blurxFramebuffer = gl.createFramebuffer();
+            let colorBlurxTexture;
+            
+            const bloomProgram = createProgram(//grabs the stuff that is deemed bright
+                document.getElementById("post-vertex-shader").text,
+                document.getElementById("bloom-fragment-shader").text
+            );
+            const bloomFramebuffer = gl.createFramebuffer();//yay framebuffers, they gl where and how to draw, if you call gl.bindFramebuffer with null then it draws on canvas WOW
+            let colorBloomTexture;//need lots of texture arg
+            
+            const mainProgram = createProgram(//draws the triangles and cubes
+                document.getElementById("main-vertex-shader").text,
+                document.getElementById("main-fragment-shader").text,
+            );
+            const mainFramebuffer = gl.createFramebuffer();
+            let colorTexture;
+            let depthbuffer;
+            function initializeFramebuffers(){//everytime we resize we have to fix all of the textures HUFJDS
+                gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                colorTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorTexture,0);
+                depthbuffer = gl.createRenderbuffer();
+                gl.bindRenderbuffer(gl.RENDERBUFFER,depthbuffer);
+                gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24,canvas.width,canvas.height);
+                gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depthbuffer);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+                gl.viewport(0,0,canvas.width,canvas.height);
+                colorBloomTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorBloomTexture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBloomTexture,0);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,blurxFramebuffer);
+                colorBlurxTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D,colorBlurxTexture);
+                gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,canvas.width,canvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,colorBlurxTexture,0);
+            }
+            initializeFramebuffers();
+            
+            const mainVao = gl.createVertexArray();//there's only one but good practice to have
+            gl.bindVertexArray(mainVao);
+            
+            const mainInstanceBuffer = gl.createBuffer();//this is the intance buffer for the main boxes that aren't rotated.
+            gl.bindBuffer(gl.ARRAY_BUFFER,mainInstanceBuffer);
+            
+            let mainBoxesData = [];//holds gl data, which means that this-
+            const mainBoxesHitData = [];//holds almost the same thing because of instancing
+            function addBox(x,y,z,w,h,d){
+                mainBoxesData.push(
+                    x,y,z,w,h,d,0
+                );
+                mainBoxesHitData.push(
+                    [x,y,z,w,h,d]//see? Not much difference
+                );
+            }
+            for(var i = 0; i < 100;i++){
+                addBox(Math.random()*50-25,Math.random()*50,Math.random()*50-25,5,5,5);//random boxes everywhere
+            }
+            addBox(-100,-31,-100,200,30,200);//big floor
+            mainBoxesData = new Uint8Array(new Float32Array(mainBoxesData).buffer);//we want the byte data
+            for(var i = 24; i < mainBoxesData.length; i+=28){
+                mainBoxesData[i] = Math.random()*125;
+                mainBoxesData[i+1] = Math.random()*125;
+                mainBoxesData[i+2] = Math.random()*125;//random colors hbihfnj
+            }
+            gl.bufferData(gl.ARRAY_BUFFER, mainBoxesData,gl.DYNAMIC_DRAW);//dynamic means it will be updated
+            
+            gl.enableVertexAttribArray(1);
+            gl.enableVertexAttribArray(2);
+            gl.enableVertexAttribArray(4);
+            
+            gl.vertexAttribPointer(1,3,gl.FLOAT,false,28,0);
+            gl.vertexAttribPointer(2,3,gl.FLOAT,false,28,12);
+            gl.vertexAttribPointer(4,3,gl.BYTE,true,28,24);
+            
+            gl.vertexAttribDivisor(1,1);
+            gl.vertexAttribDivisor(2,1);
+            gl.vertexAttribDivisor(4,1);//one per box wo, this shouldn't be necessary SMART JUDGE
+            
+            const mainVertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER,mainVertexBuffer);//this holds the per vertex data, but since we have isntancing we only need the vertex data for one box. It will hold color and model position.
+            
+            const boxModelData = new Uint8Array(new Float32Array([0,0,0,0,0,1,0,0,1,0,0,0,1,0,0,0,0,1,0,0,1,1,0,0,0,1,1,0,0,0,1,0,1,0,1,0,0,1,1,0,1,0,1,0,1,1,1,0,0,1,1,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,1,0,0,1,1,1,0,1,0,1,0,1,1,0,0,1,0,0,0,1,1,0,0,1,0,1,0,0,1,0,0,0,1,1,0,1,1,0,0,1,1,1,0,1,1,0,0,0,1,1,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,1,0,0,0,1,0,1,0,0,0,]).buffer);
+            const sideColors = [
+                0.5,0,0,
+                0,0.5,0,
+                0,0,0.5,
+                0.5,0.5,0,
+                0,0.5,0.5,
+                0.5,0,0.5,
+            ];
+            for(var i = 12; i < boxModelData.length; i+=16){
+                boxModelData[i] = sideColors[((i-12)/16/6|0)*3]*255;
+                boxModelData[i+1] = sideColors[((i-12)/16/6|0)*3+1]*255;
+                boxModelData[i+2] = sideColors[((i-12)/16/6|0)*3+2]*255;
+                boxModelData[i+3] = 255;//get some colors hooray
+            }
+            
+            gl.bufferData(gl.ARRAY_BUFFER,(boxModelData),gl.STATIC_DRAW);//these aren't changing ever ever ever so
+            
+            gl.enableVertexAttribArray(0);
+            gl.enableVertexAttribArray(3);
+            gl.vertexAttribPointer(0,3,gl.FLOAT,false,16,0);
+            gl.vertexAttribPointer(3,4,gl.UNSIGNED_BYTE,true,16,12);//pointer it duh
+            
+            
+            const transformedProgram = createProgram(//these boxes WILL be rotated round
+                document.getElementById("transformed-vertex-shader").text,
+                document.getElementById("main-fragment-shader").text
+            );
+            
+            const MAX_ROTATED_BOXES = 1000;//random but who cares lol.
+            
+            const transformedVao = gl.createVertexArray();//oh yeah there is two I forgot
+            gl.bindVertexArray(transformedVao);
+            
+            const transformedInstanceBuffer = gl.createBuffer();//instance buffer for transformed... sound familiar?
+            gl.bindBuffer(gl.ARRAY_BUFFER,transformedInstanceBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER,(function(){
+                var F = new Uint8Array(MAX_ROTATED_BOXES*4);
+                for(var i = 0; i < F.length; i+=4){
+                    F[i] = Math.random()*125;//yay colors
+                    F[i+1] = Math.random()*125;//yay colors
+                    F[i+2] = Math.random()*125;//yay colors
+                    F[i+3] = 255;//random color's of course, they are _opaque_ though, indicated no bloom
+                }
+                return F;
+            })(),gl.STATIC_DRAW);
+            
+            gl.enableVertexAttribArray(2);
+            gl.vertexAttribPointer(2,4,gl.UNSIGNED_BYTE,true,4,0);//look in the shader if you really want to know what 2 means ok boomer
+            gl.vertexAttribDivisor(2,1);
+            
+            const transformedMasterMatrixArray = new Float32Array(MAX_ROTATED_BOXES*16);//holds all of the matrixes, wowie!
+            function getTransformMatrix(i){
+                return transformedMasterMatrixArray.subarray(i*16,i*16+16);//this is why we like references so much.
+            }
+            
+            const transformedMatrixInstanceBuffer = gl.createBuffer();//two instance buffers because matrices will be changed a lot, while colors wont, so better not mix them up hagyh
+            gl.bindBuffer(gl.ARRAY_BUFFER,transformedMatrixInstanceBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, transformedMasterMatrixArray, gl.DYNAMIC_DRAW);
+            
+            for(var i = 0; i < 4; i++){//la de da
+                gl.enableVertexAttribArray(3+i);
+                gl.vertexAttribPointer(3+i,4,gl.FLOAT,false,64,i*16);
+                gl.vertexAttribDivisor(3+i,1);
+            }
+            
+            const transformedVertexBuffer = mainVertexBuffer;//both are cubes so... I made this alias for no raisin
+            gl.bindBuffer(gl.ARRAY_BUFFER,transformedVertexBuffer);
+            
+            gl.enableVertexAttribArray(0);
+            gl.enableVertexAttribArray(1);
+            
+            gl.vertexAttribPointer(0,3,gl.FLOAT,false,16,0);
+            gl.vertexAttribPointer(1,3,gl.UNSIGNED_BYTE,true,16,12);
+            
+            /**
+                NODE
+                @contructor
+                    returns an object with properties err
+                @arguments
+                    parent: parent node, it will inherit transformations from this
+                    view: view to a big array that will be passed into the gpu
+                @returns properteys
+                    children: array of kids bro
+                    personalMatrix: matrix used for non inhertiable transformations, made to save time and money and to miss the mark. (We don't want scaling to inherit usually haha0)
+                    heritableMatrix: our kids look like us because they got the traits we passed down on purpose
+            **/
+            function Node(parent,view){
+                this.setParent(parent);
+                this.children = [];
+                this.personalMatrix = mat4.create();
+                this.heritableMatrix = view;
+            }
+            //it sets the parent no explanation needed unless super nOOB L
+            Node.prototype.setParent = function(parent){
+                if(this.parent){
+                    for(var i = 0; i < this.parent.children.length;i++){
+                        var index = this.parent.children.indexOf(this);
+                        this.parent.children.splice(index,1);
+                    }
+                }
+                this.parent = parent;
+                if(parent){
+                    this.parent.children.push(this);
+                }
+            };
+            //updates a base and then all of it's children, their children, etc.
+            Node.updateTree = function(base){
+                if(base.parent){
+                    mat4.multiply(base.heritableMatrix,base.parent.heritableMatrix,base.heritableMatrix);
+                }
+                base.children.forEach(function(a){
+                    Node.updateTree(a);
+                });
+                mat4.multiply(base.heritableMatrix,base.heritableMatrix,base.personalMatrix);
+            };
+            //sets a lot of matricies to the identity matrix.
+            Node.clearTree = function(base){
+                base.heritableMatrix.set([
+                1,0,0,0,
+                0,1,0,0,
+                0,0,1,0,
+                0,0,0,1]);
+                base.children.forEach(function(a){
+                    Node.clearTree(a);
+                });
+            };
+            Node.pointer = 0;//used to accumulate how many view's gotton
+            //returns a node with a new view hmm.
+            function newNodeWithView(parent){
+                var m = getTransformMatrix(Node.pointer++);
+                m.set([
+                    1,0,0,0,
+                    0,1,0,0,
+                    0,0,1,0,
+                    0,0,0,1
+                ]);
+                return new Node(parent,m);
+            }
+            
+            const masterNode = new Node(null,mat4.create());//the master node shouldn't have a block rendered, so no view
+            var startSnakeNodes = Node.pointer;
+            const snakeNodes = [];
+            const snakeCore = newNodeWithView(masterNode);
+            mat4.scale(snakeCore.personalMatrix,snakeCore.personalMatrix,[0,0,0]);//don't ask okay, try it out if you know what I mean.
+            function monteCarlo(iter){// not sure if it's really monte carlo, but it basically returns biased random numbers to make a nice "snake"
+                var f = 0;
+                for(var i = 0; i < iter; i++){
+                    f=Math.max(f,Math.random());
+                }
+                return f;
+            }
+            for(var k = 0; k < 500; k++){//we make a "snake"
+                var ind = monteCarlo(k*0.1)*snakeNodes.length|0;
+                var g = newNodeWithView(ind?snakeNodes[ind]:snakeCore);
+                mat4.scale(g.personalMatrix,g.personalMatrix,[1,0.2,0.2]);
+                snakeNodes.push(g);
+            }
+            var endSnakeNodes = Node.pointer;//used for raw data managing below
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER,transformedInstanceBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER,startSnakeNodes*4,(function(){
+                var F = new Uint8Array(endSnakeNodes*4-startSnakeNodes*4);
+                for(var i = 0; i < F.length; i+=4){
+                    F[i] = 255;//yay colors
+                    F[i+1] = 255;//yay colors
+                    F[i+2] = 255;//yay colors
+                    F[i+3] = 0;//wait it's bloomy woh
+                }
+                return F;
+            })());
+            
+            const playerBodyNodes = [];//player hieargchy dont look all that scaling is hilarious
+            playerBodyNodes[0] = newNodeWithView(masterNode);
+            mat4.scale(playerBodyNodes[0].personalMatrix,playerBodyNodes[0].personalMatrix,[2,2,1]);
+            
+            playerBodyNodes[1] = newNodeWithView(playerBodyNodes[0]);
+            mat4.translate(playerBodyNodes[1].personalMatrix,playerBodyNodes[1].personalMatrix,[0.5,1.5,-0.5]);
+            
+            playerBodyNodes[2] = newNodeWithView(playerBodyNodes[0]);
+            mat4.scale(playerBodyNodes[2].personalMatrix,playerBodyNodes[2].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[3] = newNodeWithView(playerBodyNodes[2]);
+            mat4.scale(playerBodyNodes[3].personalMatrix,playerBodyNodes[3].personalMatrix,[0.5,1,0.5]);
+            
+            playerBodyNodes[4] = newNodeWithView(playerBodyNodes[0]);
+            mat4.scale(playerBodyNodes[4].personalMatrix,playerBodyNodes[4].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[5] = newNodeWithView(playerBodyNodes[4]);
+            mat4.scale(playerBodyNodes[5].personalMatrix,playerBodyNodes[5].personalMatrix,[0.5,1,0.5]);
+            
+            playerBodyNodes[6] = newNodeWithView(playerBodyNodes[0]);
+            mat4.scale(playerBodyNodes[6].personalMatrix,playerBodyNodes[6].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[7] = newNodeWithView(playerBodyNodes[6]);
+            mat4.scale(playerBodyNodes[7].personalMatrix,playerBodyNodes[7].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[8] = newNodeWithView(playerBodyNodes[7]);
+            mat4.scale(playerBodyNodes[8].personalMatrix,playerBodyNodes[8].personalMatrix,[0.5,1,0.5]);
+            
+            playerBodyNodes[9] = newNodeWithView(playerBodyNodes[0]);
+            mat4.scale(playerBodyNodes[9].personalMatrix,playerBodyNodes[9].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[10] = newNodeWithView(playerBodyNodes[9]);
+            mat4.scale(playerBodyNodes[10].personalMatrix,playerBodyNodes[10].personalMatrix,[0.5,1,0.5]);
+            playerBodyNodes[11] = newNodeWithView(playerBodyNodes[10]);
+            mat4.scale(playerBodyNodes[11].personalMatrix,playerBodyNodes[11].personalMatrix,[0.5,1,0.5]);
+            
+            const mainMatrixUniformLocation = gl.getUniformLocation(mainProgram,"u_matrix");
+            const transformedMatrixUniformLocation = gl.getUniformLocation(transformedProgram,"u_matrix");//sadly they didn't decide to make uniforms numbers and they technically are supposed to be fetched independently. (No handly layout(uniformLocation=0) thing:( even though it's in opengl!1!1) You can sort of reuse them but's it's unreliable in my experiences
+            
+            //player literarlly get a life
+            const player = {
+                pos:vec3.fromValues(0,0,0),
+                vel:vec3.fromValues(0,0,0),//doh
+                wouldVel:vec3.create(),//used for player walking prediction
+                r:{
+                    roll:0,
+                    pitch:0,//doh
+                    yaw:0,
+                },
+                zoom:0,
+                walkingAngle:0,
+                nodes:playerBodyNodes,//alias for convienience
+                walkTimer:0,//used for timing player movements
+                height:3,
+                rad:1,
+                jumpTime:0,
+                update(){
+                    vec3.add(this.pos,this.pos,this.vel);
+                    this.vel[0]*=0.95;
+                    this.vel[1]*=0.99;
+                    this.vel[1]-=0.01;//gravity
+                    this.vel[2]*=0.95;
+                    const walkingVelLength = Math.sqrt(this.wouldVel[0]**2+this.wouldVel[2]**2);
+                    if(walkingVelLength>0.1){
+                        this.wouldVel[0]/=walkingVelLength;
+                        this.wouldVel[2]/=walkingVelLength;
+                        
+                        this.wouldVel[0]*=0.1;
+                        this.wouldVel[2]*=0.1;
+                    }
+                    if(this.vel[0]+this.vel[2]){
+                        this.walkingAngle = Math.atan2(this.wouldVel[2],this.wouldVel[0])+Math.PI*0.5;//turn vector to angle not much to say
+                    }
+                    
+                    var velAdd = [0,0];
+                    if(keys.w){
+                        velAdd[0]-=Math.cos(this.r.yaw+Math.PI*0.5);
+                        velAdd[1]-=Math.sin(this.r.yaw+Math.PI*0.5);
+                    }
+                    if(keys.s){
+                        velAdd[0]+=Math.cos(this.r.yaw+Math.PI*0.5);
+                        velAdd[1]+=Math.sin(this.r.yaw+Math.PI*0.5);
+                    }
+                    if(keys.d){
+                        velAdd[0]+=Math.cos(this.r.yaw);
+                        velAdd[1]+=Math.sin(this.r.yaw);
+                    }
+                    if(keys.a){
+                        velAdd[0]-=Math.cos(this.r.yaw);
+                        velAdd[1]-=Math.sin(this.r.yaw);
+                    }
+                    var l = Math.sqrt(velAdd[0]**2+velAdd[1]**2);
+                    if(l){//normalize movement
+                        this.vel[0]+=(velAdd[0]/l)*0.015;this.vel[2]+=(velAdd[1]/l)*0.015;
+                        this.wouldVel[0]+=(velAdd[0]/l)*0.015;this.wouldVel[2]+=(velAdd[1]/l)*0.015;
+                    }
+                    if(keys.shift){//shhhh hahaha
+                        this.vel[1]-=0.01;
+                    }
+                    if(keys[" "] && this.jumpTime>0){//jump!
+                        //this.vel[1]+=0.01;
+                        this.vel[1]=0.4;
+                        this.jumpTime = 0;
+                    }
+                    if(this.jumpTime>4){//you on block slow down
+                        this.vel[0]*=0.95;
+                        this.vel[2]*=0.95;
+                    }
+                    this.jumpTime--;
+                    
+                    this.r.yaw+=mouse.dx*0.01;
+                    this.r.yaw%=Math.PI*2;
+                    
+                    this.r.pitch+=mouse.dy*0.01;
+                    this.r.pitch=clamp(this.r.pitch,-Math.PI*0.5,Math.PI*0.5);
+                    
+                    this.zoom-=mouse.dscroll*0.01;
+                    this.zoom=clamp(this.zoom,0,10);
+                },
+                toMatrix(){
+                    const matrix = mat4.create();
+                    mat4.translate(matrix,matrix,[0,0,-this.zoom]);
+                    mat4.rotateX(matrix,matrix,this.r.pitch);
+                    mat4.rotateY(matrix,matrix,this.r.yaw);//look this turns it to the plery view just look at the code
+                    //mat4.translate(matrix,matrix,[0,-this.zoom*0.5,0]);
+                    mat4.translate(matrix,matrix,vec3.mul([0,0,0],this.pos,[-1,-1,-1]));
+                    return matrix;
+                },
+                updateNodes(){
+                    this.walkTimer %= Math.PI*2;//don't want that happening!
+                    if(this.vel[0]**2+this.vel[2]**2>0.001){
+                        this.walkTimer += Math.sqrt(this.vel[0]**2+this.vel[2]**2);//move the player normally
+                    }else{
+                        //we settle player back to resting position shortest way
+                        var d1 = this.walkTimer;
+                        var d2 = Math.PI*2 - this.walkTimer;
+                        if(d1<d2){
+                            if(this.walkTimer>0){
+                                this.walkTimer-=0.05;
+                            }
+                        }else{
+                            this.walkTimer+=0.05;
+                        }
+                    }
+                    if(player.zoom<1){
+                        mat4.multiply(this.nodes[0].heritableMatrix,this.nodes[0].heritableMatrix,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]);//hahahaha we can't see his arms b/c that would be aweful
+                    }
+                    
+                    /**
+                        THere is a lot of nodes and I don't have time to explain, so just know that similar ones are arms and legs, and the first two are like head and body
+                    **/
+                    mat4.translate(this.nodes[0].heritableMatrix,this.nodes[0].heritableMatrix,this.pos);
+                    mat4.rotateY(this.nodes[0].heritableMatrix,this.nodes[0].heritableMatrix,-this.walkingAngle);
+                    mat4.translate(this.nodes[0].heritableMatrix,this.nodes[0].heritableMatrix,[-1,-2.25,-0.25]);
+                    mat4.translate(this.nodes[2].heritableMatrix, this.nodes[2].heritableMatrix, [0.1,0.25,1]);
+                    mat4.rotateX(this.nodes[2].heritableMatrix, this.nodes[2].heritableMatrix, Math.sin(this.walkTimer)*0.5+0.5);
+                    mat4.translate(this.nodes[2].heritableMatrix, this.nodes[2].heritableMatrix, [0,-1,-0.7]);
+                    mat4.rotateX(this.nodes[3].heritableMatrix, this.nodes[3].heritableMatrix, -Math.sin(this.walkTimer)*0.5-0.5);
+                    mat4.translate(this.nodes[3].heritableMatrix, this.nodes[3].heritableMatrix, [0,-1,0]);
+                    
+                    
+                    mat4.translate(this.nodes[4].heritableMatrix, this.nodes[4].heritableMatrix, [1.4,0.25,1]);
+                    mat4.rotateX(this.nodes[4].heritableMatrix, this.nodes[4].heritableMatrix, Math.sin(this.walkTimer+Math.PI)*0.5+0.5);
+                    mat4.translate(this.nodes[4].heritableMatrix, this.nodes[4].heritableMatrix, [0,-1,-0.7]);
+                    mat4.rotateX(this.nodes[5].heritableMatrix, this.nodes[5].heritableMatrix, -Math.sin(this.walkTimer+Math.PI)*0.5-0.5);
+                    mat4.translate(this.nodes[5].heritableMatrix, this.nodes[5].heritableMatrix, [0,-1,0]);
+                    
+                    mat4.translate(this.nodes[6].heritableMatrix, this.nodes[6].heritableMatrix, [2,1.75,0.5]);
+                    mat4.rotateX(this.nodes[6].heritableMatrix, this.nodes[6].heritableMatrix, -Math.sin(this.walkTimer)*0.5);
+                    mat4.translate(this.nodes[6].heritableMatrix, this.nodes[6].heritableMatrix, [0,-1,-0.25]);
+                    mat4.translate(this.nodes[7].heritableMatrix, this.nodes[7].heritableMatrix, [0,0,0.25]);
+                    mat4.rotateX(this.nodes[7].heritableMatrix, this.nodes[7].heritableMatrix, Math.sin(this.walkTimer)+0.5);
+                    mat4.translate(this.nodes[7].heritableMatrix, this.nodes[7].heritableMatrix, [0,-1,-0.25]);
+                    mat4.translate(this.nodes[8].heritableMatrix, this.nodes[8].heritableMatrix, [0,0,0.25]);
+                    mat4.rotateX(this.nodes[8].heritableMatrix, this.nodes[8].heritableMatrix, -Math.sin(this.walkTimer+Math.PI)*0.5+0.5);
+                    mat4.translate(this.nodes[8].heritableMatrix, this.nodes[8].heritableMatrix, [0,-1,-0.25]);
+                    
+                    mat4.translate(this.nodes[9].heritableMatrix, this.nodes[9].heritableMatrix, [-0.5,1.75,0.5]);
+                    mat4.rotateX(this.nodes[9].heritableMatrix, this.nodes[9].heritableMatrix, -Math.sin(this.walkTimer+Math.PI)*0.5);
+                    mat4.translate(this.nodes[9].heritableMatrix, this.nodes[9].heritableMatrix, [0,-1,-0.25]);
+                    mat4.translate(this.nodes[10].heritableMatrix, this.nodes[10].heritableMatrix, [0,0,0.25]);
+                    mat4.rotateX(this.nodes[10].heritableMatrix, this.nodes[10].heritableMatrix, Math.sin(this.walkTimer+Math.PI)+0.5);
+                    mat4.translate(this.nodes[10].heritableMatrix, this.nodes[10].heritableMatrix, [0,-1,-0.25]);
+                    mat4.translate(this.nodes[11].heritableMatrix, this.nodes[11].heritableMatrix, [0,0,0.25]);
+                    mat4.rotateX(this.nodes[11].heritableMatrix, this.nodes[11].heritableMatrix, -Math.sin(this.walkTimer)*0.5+0.5);
+                    mat4.translate(this.nodes[11].heritableMatrix, this.nodes[11].heritableMatrix, [0,-1,-0.25]);
+                },
+                collideBlockArr(arr){
+                    for(var i = 0; i < arr.length; i++){
+                        const box = arr[i];
+                        const vx = clamp(this.pos[0],box[0],box[0]+box[3]);
+                        const vy = clamp(this.pos[1]-this.height/2,box[1],box[1]+box[4]);//this one had to change arg
+                        const vz = clamp(this.pos[2],box[2],box[2]+box[5]);
+                        const py = clamp(vy,this.pos[1]-this.height+this.rad*0.5,this.pos[1]-this.rad*0.5);
+                        var dx = this.pos[0]-vx,
+                            dy = py-vy,
+                            dz = this.pos[2]-vz,
+                            d=dx*dx+dy*dy+dz*dz;
+                        if(d < this.rad*this.rad){
+                            if(d){
+                                d=Math.sqrt(d);
+                                dx/=d;dy/=d;dz/=d;
+                                var far = this.rad-d;
+                                this.pos[0]+=dx*far;
+                                this.pos[1]+=dy*far;
+                                this.pos[2]+=dz*far;
+                                var vAN = ((-this.vel[0])*dx+(-this.vel[1])*dy+(-this.vel[2])*dz);//dot product
+                                if(vAN<0)continue;//moving away
+                                this.vel[0]+=vAN*dx;
+                                this.vel[1]+=vAN*dy;
+                                this.vel[2]+=vAN*dz;
+                                if(dy>0.5){
+                                    this.jumpTime = 5;
+                                }
+                            }else{
+                                //you were inside so we sent to to the top of the box
+                                this.pos[1]=box[1]+box[4]+this.height+this.rad*0.5;
+                                this.vel[1]=0;
+                                this.jumpTime=5;//why not
+                            }
+                        }
+                    }
+                }
+            };
+            
+            gl.clearColor(0,0,0,1);
+            gl.enable(gl.CULL_FACE);
+            gl.enable(gl.DEPTH_TEST);
+            cancelAnimationFrame(window.parent.raf);
+            let frameCount = 0;
+            let now = performance.now();
+            let scene = "menu";
+            function loop(){
+                try{
+                if(frameCount%10===0){
+                    setConstLog((1000/(performance.now()-now)).toFixed(2));
+                }
+                now=performance.now();
+                frameCount++;
+                switch(scene){
+                case "menu":{
+                    ctx.fillStyle = "black";
+                    ctx.fillRect(0,0,canvas.width,canvas.height);
+                    ctx.font = "14px monospace";
+                    ctx.textAlign = "center";
+                    ctx.fillStyle = "white";
+                    ctx.fillText("By Yokiebob",canvas.width/2,canvas.height/4);
+                    ctx.fillText("Click to the left if you want music, to the right if you do not.",canvas.width/2,canvas.height/2);
+                    if(mouse.clicked){
+                        if(mouse.x<canvas.width/2){
+                            window.startMusic();
+                            scene = "game";
+                        }else{
+                            scene = "game";
+                        }
+                    }
+                }break;
+                case "game":{
+                player.update();
+                player.collideBlockArr(mainBoxesHitData);
+                
+                const matrix = mat4.create();
+                mat4.perspective(matrix,Math.PI/2,canvas.width/canvas.height,0.01,Infinity);
+                mat4.multiply(matrix,matrix,player.toMatrix());
+                
+                Node.clearTree(masterNode);
+                mat4.translate(snakeCore.heritableMatrix,snakeCore.heritableMatrix,[0,50,0]);
+                for(var i = 0; i < snakeNodes.length; i++){
+                    mat4.translate(snakeNodes[i].heritableMatrix,snakeNodes[i].heritableMatrix,[1,0,0]);
+                    mat4.rotateY(snakeNodes[i].heritableMatrix,snakeNodes[i].heritableMatrix, i+Math.sin(i)*frameCount*0.000305+frameCount*0.001);
+                    mat4.rotateX(snakeNodes[i].heritableMatrix, snakeNodes[i].heritableMatrix, i*10.134+frameCount*Math.sin(i)*0.00025+frameCount*0.001);
+                    mat4.rotateZ(snakeNodes[i].heritableMatrix, snakeNodes[i].heritableMatrix, i*1.137+frameCount*Math.sin(i)*0.00037+frameCount*0.001);
+                    mat4.translate(snakeNodes[i].heritableMatrix,snakeNodes[i].heritableMatrix,[0,-0.1,-0.1]);
+                }
+                player.updateNodes();
+                
+                Node.updateTree(masterNode);
+                
+                gl.bindFramebuffer(gl.FRAMEBUFFER,mainFramebuffer);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                
+                gl.useProgram(mainProgram);
+                gl.bindVertexArray(mainVao);
+                gl.uniformMatrix4fv(mainMatrixUniformLocation,false,matrix);
+                gl.drawArraysInstanced(gl.TRIANGLES,0,boxModelData.length/16,mainBoxesData.length/7/4);
+                
+                gl.useProgram(transformedProgram);
+                gl.bindVertexArray(transformedVao);
+                gl.uniformMatrix4fv(transformedMatrixUniformLocation,false,matrix);
+                gl.bindBuffer(gl.ARRAY_BUFFER,transformedMatrixInstanceBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER,transformedMasterMatrixArray,gl.DYNAMIC_DRAW);
+                gl.drawArraysInstanced(gl.TRIANGLES,0,boxModelData.length/16,Node.pointer);
+                
+                
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,bloomFramebuffer);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.useProgram(bloomProgram);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                
+                gl.bindTexture(gl.TEXTURE_2D,colorBloomTexture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER,blurxFramebuffer);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.useProgram(blurxProgram);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                
+                gl.useProgram(bluryProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D,colorBlurxTexture);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D,colorTexture);
+                gl.uniform1i(bleep0,0);
+                gl.uniform1i(bleep1,1);//bleep
+                gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLES,0,3);
+                gl.activeTexture(gl.TEXTURE0);//otherwise it like wraps aorund
+                
+                ctx.drawImage(canvas,0,0,canvas.width,canvas.height);
+                }break;
+                }
+                mouse.reset();
+                window.parent.raf = requestAnimationFrame(loop);
+                }catch(err){
+                log(err);}
+            }
+            loop();
+            
+            const observer = new ResizeObserver(function(e){//fancy!
+                for(var i = 0; i < e.length; i++){
+                    canvas.width = output_canvas.width = e[i].contentRect.width;
+                    canvas.height = output_canvas.height = e[i].contentRect.height;
+                    output_canvas.style.width = e[i].contentRect.width+"px";//two canvas's for starting text!
+                    output_canvas.style.height = e[i].contentRect.height+"px";
+                    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+                    gl.viewport(0,0,canvas.width,canvas.height);
+                    
+                    initializeFramebuffers();//oof
+                }
+            });
+            observer.observe(document.body);//yup indeedy
+            
+            log(gl.getError());
+        }catch(err){
+            log(err);
+        }finally{
+            log("No Syntax errors");//hg
+        }
+        </script>
+        <script type>{window.pl_synth_wasm_init=(A,g)=>{let I=null,C=0,t=A=>{let g=C+2*A*4,t=Math.ceil(g/65536),e=Math.ceil(I.memory.buffer.byteLength/65536);return t>e&&I.memory.grow(t-e),[new Float32Array(I.memory.buffer,C,A),new Float32Array(I.memory.buffer,C+4*A,A)]},e=A=>{for(let g=0;g<A.length;g++)A[g]=Array.isArray(A[g])?e(A[g]):A[g]??0;return A},Q=(A,g)=>{let I=A[20]*g>>1,C=A[21]/255,t=Math.ceil(Math.log(.1)/Math.log(C));return A[13]+A[14]+A[15]+t*I},E=(A,g,C,t)=>{let e=t[20]*C>>1,Q=t[21]/255;Q&&I.delay(A.byteOffset,g.byteOffset,A.length,e,Q)},f=(g,C=147,f=5513)=>{g=e(g);let B=Q(g,f),i=A.createBuffer(2,B,44100),l=i.getChannelData(0),a=i.getChannelData(1),[h,s]=t(B);return I.clear(h.byteOffset,h.length),I.clear(s.byteOffset,s.length),I.gen(h.byteOffset,s.byteOffset,0,f,C,...g),E(h,s,f,g),l.set(h),a.set(s),i},B=g=>{let C=(g=e(g))[0],f=g[1],B=0;for(let A of f){let g=A[1].length*C*32+Q(A[0],C);g>B&&(B=g)}let i=A.createBuffer(2,B,44100),l=i.getChannelData(0),a=i.getChannelData(1),[h,s]=t(B);for(let A of f){let g=A[0],t=A[1],e=0,Q=B;I.clear(h.byteOffset,h.length),I.clear(s.byteOffset,s.length);for(let E of t)for(let t=0;t<32;t++){let f=A[2][E-1]?.[t];f&&(Q=Math.min(Q,e),I.gen(h.byteOffset,s.byteOffset,e,C,f,...g)),e+=C}E(h,s,C,g);for(let A=Q;A<B;A++)l[A]+=h[A],a[A]+=s[A]}return i},i=atob("AGFzbQEAAAABQQZgAX0BfWACfX0BfWAAAGAif39/f39/f39/f39/f39/f39/f39/f39/f39/f39/f39/fwBgAn9/AGAFf39/f30AAhUCA2VudgNzaW4AAANlbnYDcG93AAEDBgUCAgMEBQUDAQADBiwHfwFBkIgIC38AQYAIC38AQZCIBAt/AEGACAt/AEGQiAgLfwBBAAt/AEEBCweUAQwGbWVtb3J5AgARX193YXNtX2NhbGxfY3RvcnMAAgRpbml0AAMDZ2VuAAQFY2xlYXIABQVkZWxheQAGDF9fZHNvX2hhbmRsZQMBCl9fZGF0YV9lbmQDAg1fX2dsb2JhbF9iYXNlAwMLX19oZWFwX2Jhc2UDBA1fX21lbW9yeV9iYXNlAwUMX190YWJsZV9iYXNlAwYKiwwFAgAL1AEFAX8BfAF/An0BfEEAIQBEAAAAAAAAAAAhAUGAgH8hAgNAIACyIgND2A/JOpQQgICAgAAhBCACQZCIg4AAaiADQwAAgDmUQwAAAL+SOAIAIAJBkIiBgABqIAQ4AgAgAkGQiISAAGogAUQAAAAAAABQP6IiBUQAAAAAAADwv6BEAAAAAAAACEAgBaEgAEGAEEkbtjgCACACQZCIgoAAakMAAIC/QwAAgD8gBEMAAAAAXRs4AgAgAEEBaiEAIAFEAAAAAAAA8D+gIQEgAkEEaiICDQALC68JBgF/En0CfAJ9AXwBfSOAgICAAEEgayIiJICAgIAAQwAAAEAgG0F4arIQgYCAgAAhI0MAAABAIB9BeGqyEIGAgIAAISRDfZyHPyAFQQxsIARBoH5qIhtqIAZqshCBgICAACElQ32chz8gC0EMbCAbaiAMarIQgYCAgAAhJgJAIBMgEmoiCyAUakF/akEASA0AICW7RAAAAAAAAHA/oiAHs0MXt1E6lEMAAIA/kruitiEnICa7RAAAAAAAAHA/oiANs0MXt1E6lEMAAIA/kruitiEoIByzQwAAADuUISkgILNDAAAAO5QhKkMAAIA/IBSzlSErQwAAgD8gErOVISwgEbNDAAAAMJQhLSAYs0MAAH9DlSEuICMgA7IiJZUhLyAkICWVITAgFEF/aiEMIAsgAmohHyAVs0PG+Rs7lCExIAEgFCATaiASaiACakECdEF8aiITaiEUIAAgE2ohEyAiQQxqIBZBAnRqIQAgD7MhMiAJsyEzIBezITRBACgCgIiAgAAhAkQAAAAAAAAAACE1ICFBDnQhBiAKQQ50IQUgEEEOdCEERAAAAAAAAAAAITZDAAAAACEmQwAAAAAhNwNAAkACQCAwIB8gDGqyIjiUQwAAgEWUIiOLQwAAAE9dRQ0AICOoIRsMAQtBgICAgHghGwsgBiAbQf8fcUECdHJBkIiAgABqKgIAICqUQwAAAD+SISUCQAJAIAsgDGoiGyASTw0AICwgG7KUISMMAQtDAACAPyEjIBsgC0kNAEMAAIA/IAyzICuUkyEjCwJAAkAgNSAlQwAAgD8gHRsgJ5QgIyAjlCIkQwAAgD8gCBuUu6AiNUQAAAAAAACwQKIiOZlEAAAAAAAA4EFjRQ0AIDmqIRsMAQtBgICAgHghGwsgBSAbQf8fcUECdHJBkIiAgABqKgIAIDOUQwAAAACSIToCQAJAIDYgJEMAAIA/IA4bICiUu6AiNkQAAAAAAACwQKIiOZlEAAAAAAAA4EFjRQ0AIDmqIRsMAQtBgICAgHghGwsgBCAbQf8fcUECdHJBkIiAgABqKgIAIDKUIDqSISQCQCAtQwAAAABbDQBBACACQQ10IAJzIhtBEXYgG3MiG0EFdCAbcyIbNgKAiICAACAtIAKylCAjlCAkkiEkIBshAgsgI0OBgIA7lCAklCEjAkAgFkUNAAJAAkAgJUMAAIA/IB4bIDSUQ8Y3PjeUQwAAgEWUIiSLQwAAAE9dRQ0AICSoIRsMAQtBgICAgHghGwsgIiAbQf8fcUECdEGQiICAAGoqAgBDAADAP5QiJCA3lCAmkiImOAIUICIgIzgCDCAiIC4gIyA3k5QgJpMiIzgCECAiICYgI5I4AhwgIiAkICOUIDeSIjc4AhggACoCACEjCyAxICOUISMCQAJAIC8gOJRDAACARZQiJItDAAAAT11FDQAgJKghGwwBC0GAgICAeCEbCyATICNDAACAPyAbQf8fcUECdEGQiICAAGoqAgAgKZRDAAAAP5IiJJOUIBMqAgCSOAIAIBQgIyAklCAUKgIAkjgCACAUQXxqIRQgE0F8aiETIAsgDEF/aiIMakF/Sg0ACwsgIkEgaiSAgICAAAsYAAJAIAFBAUgNACAAQQAgAUECdPwLAAsLZgEBfwJAIAIgA0wNACADQQJ0IQUgAiADayEDA0AgACAFaiICIAEqAgAgBJQgAioCAJI4AgAgASAFaiICIAAqAgAgBJQgAioCAJI4AgAgAEEEaiEAIAFBBGohASADQX9qIgMNAAsLCwsLAQBBgAgLBKVU9dgAZARuYW1lAT8HAAdqc19zaW5mAQdqc19wb3dmAhFfX3dhc21fY2FsbF9jdG9ycwMEaW5pdAQDZ2VuBQVjbGVhcgYFZGVsYXkHEgEAD19fc3RhY2tfcG9pbnRlcgkIAQAFLmRhdGEAOAlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEMVWJ1bnR1IGNsYW5nETE0LjAuMC0xdWJ1bnR1MS4xAB4PdGFyZ2V0X2ZlYXR1cmVzASsLYnVsay1tZW1vcnk="),l=new Uint8Array(i.length);for(let A=0;A<i.length;A++)l[A]=i.charCodeAt(A);WebAssembly.instantiate(l,{env:{pow:Math.pow,sin:Math.sin}}).then((A=>{I=A.instance.exports,I.init(),C=I.memory.buffer.byteLength,g&&g({sound:f,song:B})}))};}</script>
+        <script type>{
+            let ctx = new (window.webkitAudioContext||window.AudioContext)();
+            let songBuffer = null;
+            const song = [5513,[[[7,,,,192,2,7,,,,181,2,255,,,2756,40,,,,2,135],[,,1,1,1,1,2,2,1,1,1],[[144,,144,,,144,146,144,144,156,,156,,,,,144,,144,,,144,146,144,144,156,,156],[144,147,151,140,144,147,139,143,146,137,140,144,135,139,144,,144,147,151,140,144,147,139,143,146,137,140,144,135,139,144]]],[[7,,,,255,3,8,,,,255,,,48866,,48866,255,3,169,154,,,6,110],[,,,,1,2,1,2,1,2],[[120,,,,,,,,,,,,,,,,115],[123,,,,,,,,,,,,,,,,122]]],[[7,,,1,115,,7,,,1,117,,,100,,8897,254,,,,1,144],[1,1,1,1,1,1,1,1,1,1,1],[[123,,,,,,123,123,,123,,,,,,,123,,,,,,123,123,,123]]]]];
+            pl_synth_wasm_init(ctx, (synth) => {
+                songBuffer = synth.song(song);
+            });
+            window.startMusic = function(){
+                ctx.resume();
+                let source = ctx.createBufferSource();
+                source.buffer = songBuffer;
+                source.connect(ctx.destination);
+                source.start();
+                source.loop = true;
+            };
+            window.stopMusic = function(){
+                source.stop();
+            };
+            }
+        </script>
+    </body>
+</html>
