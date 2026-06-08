@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>title</title>
+    <link rel="stylesheet" href="main.css">
+    <style>
+        *{
+            overflow:auto;
+            font-family:"mono";
+        }
+    </style>
+</head>
+<body>
+    <canvas id="myCanvas" width="600" height="600"></canvas>
+    <input type="number" id="brushSizer"/><textarea id="edit"></textarea>
+    <pre id="log"></pre>
+    <script>
+        const canvas = document.getElementById("myCanvas");
+        const ctx = canvas.getContext("2d");
+        const WORLD_SIZE = 30;
+        const BLOCK_SIZE = 20;
+        const map = Array(WORLD_SIZE).fill(0).map(x=>Array(WORLD_SIZE).fill(1));
+        let mouseDown = false;
+        let mouseButton = 0;
+        let mouseX = 0,mouseY = 0;
+        let brush_size=1;
+        canvas.onmousemove = (e) => {
+            mouseX=e.x;mouseY=e.y;
+        };
+        canvas.onmousedown = (e) => {
+            mouseDown = 1;
+            mouseButton=e.button;
+        };
+        canvas.onmouseup = (e) => {
+            e.preventDefault();
+            mouseDown = 0;
+        };
+        let erase = false;
+        document.onkeydown=(e)=>{
+            if(e.key.toString()=="e"){erase=true;}
+        };
+        document.onkeyup =(e)=>{
+            if(e.key.toString()=="e"){
+                erase=false;
+            }else if(e.key.toString()=="p"){
+                log.innerHTML="clev(["+(map.map(x=>'<br>    "'+x.map(f=>[".","a"][f]).join("")+'"'))+"<br>]),";
+            }
+        };
+        function distsq(a,b,c,d){
+            return (a-c)**2+(b-d)**2;
+        }
+        function draw(){
+        try{
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = "black";
+            ctx.strokeStyle = "red";
+            for(var i = 0; i < WORLD_SIZE; i++){
+                for(var k = 0; k < WORLD_SIZE; k++){
+                    if(distsq(i,k,mouseX/BLOCK_SIZE,mouseY/BLOCK_SIZE)<brush_size){
+                       if(mouseDown){
+                           map[k][i]=1;
+                       }else if(erase){
+                           map[k][i]=0;
+                       }
+                    }
+                    if(map[k][i]){
+                        ctx.fillRect(i*BLOCK_SIZE,k*BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE);
+                    }
+                    ctx.strokeRect(i*BLOCK_SIZE,k*BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE);
+                }
+            }
+            requestAnimationFrame(draw);
+            }catch(err){alert(err);}
+        }
+        draw();
+        brushSizer.onchange=()=>{
+            brush_size = brushSizer.value**2;
+        };
+        edit.onchange =()=>{
+            const f = JSON.parse(edit.value.trim().slice(5,-2));
+            for(var i = 0; i < f.length; i++){
+                for(var k = 0; k < f[i].length ;k++){
+                    map[i][k] = [".","a"].indexOf(f[i][k]);
+                }
+            }
+        };
+    </script>
+</body>
+</html>
